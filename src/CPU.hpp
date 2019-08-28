@@ -7,10 +7,12 @@ class CPU {
         unsigned char FETCH(short ADDR);
         void IMMEDIATE(unsigned char OP);
         void ACCUMULATOR_IMPLIED(unsigned char OP);
-        void ABSOLUTE(unsigned char OP, unsigned char INDEX);
-        void ZERO_PAGE(unsigned char OP, unsigned char INDEX);
+        void ABSOLUTE(unsigned char OP);
+        void ZERO_PAGE(unsigned char OP);
         void INDEX_INDIRECT(unsigned char OP);
         void INDIRECT_INDEX(unsigned char OP);
+        void ABSOLUTE_INDEX(unsigned char OP, char IND);
+        void ZERO_PAGE_INDEX(unsigned char OP, char IND);
 
         CPU():ACC(0), IND_X(0), IND_Y(0), STAT(0x34), STCK_PNT(0xFD), PROG_CNT(0xFFFC) {}
     private:
@@ -77,16 +79,16 @@ void CPU::RUN() {
                                 IMMEDIATE(CODE);
                                 break;
                             case 1:
-                                ZERO_PAGE(CODE, 0);
+                                ZERO_PAGE(CODE);
                                 break;
                             case 3:
-                                ABSOLUTE(CODE, 0);
+                                ABSOLUTE(CODE);
                                 break;
                             case 5:
-                                ZERO_PAGE(CODE, IND_X);
+                                ZERO_PAGE_INDEX(CODE, IND_X);
                                 break;
                             case 7:
-                                ABSOLUTE(CODE, IND_X);
+                                ABSOLUTE_INDEX(CODE, IND_X);
                                 break;
                         }
                         break;
@@ -96,25 +98,25 @@ void CPU::RUN() {
                                 INDEX_INDIRECT(CODE);
                                 break;
                             case 1:
-                                ZERO_PAGE(CODE, 0);
+                                ZERO_PAGE(CODE);
                                 break;
                             case 2:
                                 IMMEDIATE(CODE);
                                 break;
                             case 3:
-                                ABSOLUTE(CODE, 0);
+                                ABSOLUTE(CODE);
                                 break;
                             case 4:
                                 INDIRECT_INDEX(CODE);
                                 break;
                             case 5:
-                                ZERO_PAGE(CODE, IND_X);
+                                ZERO_PAGE_INDEX(CODE, IND_X);
                                 break;
                             case 6:
-                                ABSOLUTE(CODE, IND_Y);
+                                ABSOLUTE_INDEX(CODE, IND_Y);
                                 break;
                             case 7:
-                                ABSOLUTE(CODE, IND_X);
+                                ABSOLUTE_INDEX(CODE, IND_X);
                                 break;
                         }
                         break;
@@ -124,19 +126,19 @@ void CPU::RUN() {
                                 IMMEDIATE(CODE);
                                 break;
                             case 1:
-                                ZERO_PAGE(CODE, 0);
+                                ZERO_PAGE(CODE);
                                 break;
                             case 2:
                                 ACCUMULATOR_IMPLIED(CODE);
                                 break;
                             case 3:
-                                ABSOLUTE(CODE, 0);
+                                ABSOLUTE(CODE);
                                 break;
                             case 5:
-                                ZERO_PAGE(CODE, IND_X);
+                                ZERO_PAGE_INDEX(CODE, IND_X);
                                 break;
                             case 7:
-                                ABSOLUTE(CODE, IND_X);
+                                ABSOLUTE_INDEX(CODE, IND_X);
                                 break;
                         }
                         break;
@@ -237,21 +239,233 @@ void CPU::IMMEDIATE(unsigned char OP) {
 }
 
 
-void CPU::ABSOLUTE(unsigned char OP, unsigned char INDEX) {
+void CPU::ABSOLUTE(unsigned char OP) { 
+
+    switch(OP) {
+        case 0x6D:
+            break;
+        case 0x2D:
+            break;
+        case 0x0E:
+            break;
+        case 0xCD:
+            break;
+        case 0xEC:
+            break;
+        case 0xCC:
+            break;
+        case 0xCE:
+            break;
+        case 0x4D:
+            break;
+        case 0xEE:
+            break;
+        case 0xAD:
+            break;
+        case 0xAE:
+            break;
+        case 0xAC:
+            break;
+        case 0x4E:
+            break;
+        case 0x0D:
+            break;
+        case 0x2E:
+            break;
+        case 0x6E:
+            break;
+        case 0xED:
+            break;
+        case 0x8D:
+            break;
+        case 0x8E:
+            break;
+        case 0x8C:
+            break;
+    }
 
 }
 
 
-void CPU::ZERO_PAGE(unsigned char OP, unsigned char INDEX) {
+void CPU::ZERO_PAGE(unsigned char OP) {
+
+    switch(OP) {
+        case 0x65:
+            break;
+        case 0x25:
+            break;
+        case 0x06:
+            break;
+        case 0x24:
+            break;
+        case 0xC5:
+            break;
+        case 0xE4:
+            break;
+        case 0xC4:
+            break;
+        case 0xC6:
+            break;
+        case 0x45:
+            break;
+        case 0xE6:
+            break;
+        case 0xA5:
+            break;
+        case 0xA6:
+            break;
+        case 0xA4:
+            break;
+        case 0x46:
+            break;
+        case 0x05:
+            break;
+        case 0x26:
+            break;
+        case 0x66:
+            break;
+        case 0xE5:
+            break;
+        case 0x85:
+            break;
+        case 0x86:
+            break;
+        case 0x84:
+            break;
+    }            
+
 
 }
 
 
 void CPU::INDEX_INDIRECT(unsigned char OP) {
 
+    switch(OP) {
+        case 0x61:
+            break;
+        case 0x21:
+            break;
+        case 0xC1:
+            break;
+        case 0x41:
+            break;
+        case 0xA1:
+            break;
+        case 0x01:
+            break;
+        case 0xE1:
+            break;
+        case 0x81:
+            break;
+    }
+                
 }
 
 
 void CPU::INDIRECT_INDEX(unsigned char OP) {
 
+    switch(OP) {
+        case 0x71:
+            break;
+        case 0x31:
+            break;
+        case 0xD1:
+            break;
+        case 0x51:
+            break;
+        case 0xB1:
+            break;
+        case 0x11:
+            break;
+        case 0xF1:
+            break;
+        case 0x91:
+            break;
+    }
+
+}
+
+
+void CPU::ABSOLUTE_INDEX(unsigned char OP, char IND) {
+
+    if (0x0F & OP == 0x09)
+        OP += 0x04; 
+
+    switch(OP) {
+        case 0x7D:
+            break;
+        case 0x3D:
+            break;
+        case 0x1E:
+            break;
+        case 0xDD:
+            break;
+        case 0xDE:
+            break;
+        case 0x5D:
+            break;
+        case 0xFE:
+            break;
+        case 0xBD:
+            break;
+        case 0xBE:
+            break;
+        case 0xBC:
+            break;
+        case 0x5E:
+            break;
+        case 0x1D:
+            break;
+        case 0x3E:
+            break;
+        case 0xFD:
+            break;
+        case 0x05:
+            break;
+        case 0x9D:
+            break;
+    }
+
+}
+
+
+void CPU::ZERO_PAGE_INDEX(unsigned char OP, char IND) {
+
+    switch(OP) {
+        case 0x75:
+            break;
+        case 0x35:
+            break;
+        case 0x16:
+            break;
+        case 0xD5:
+            break;
+        case 0xD6:
+            break;
+        case 0x55:
+            break;
+        case 0xF6:
+            break;
+        case 0xB5:
+            break;
+        case 0xB6:
+            break;
+        case 0xB4:
+            break;
+        case 0x56:
+            break;
+        case 0x15:
+            break;
+        case 0x36:
+            break;
+        case 0x76:
+            break;
+        case 0xF5:
+            break;
+        case 0x95:
+            break;
+        case 0x94:
+            break;
+        case 0x96:
+            break;                            
 }

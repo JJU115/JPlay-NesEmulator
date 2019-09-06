@@ -4,7 +4,7 @@
 class CPU {
     public:
         void RUN();
-        unsigned char FETCH(short ADDR);
+        short FETCH(short ADDR);
         void IMMEDIATE(unsigned char OP);
         void ACCUMULATOR_IMPLIED(unsigned char OP);
         void ABSOLUTE(unsigned char OP);
@@ -17,13 +17,13 @@ class CPU {
         CPU():ACC(0), IND_X(0), IND_Y(0), STAT(0x34), STCK_PNT(0xFD), PROG_CNT(0xFFFC) {}
     private:
         char RAM[2048];
-        char ACC, IND_X, IND_Y, STAT, STCK_PNT;
-        short PROG_CNT;
+        short ACC, IND_X, IND_Y, STAT, STCK_PNT, PROG_CNT;
 };
 
 
-unsigned char CPU::FETCH(short ADDR) {
-    return 0xE0;
+//Values fetched are in two's complement!
+short CPU::FETCH(short ADDR) {
+    return 0x29;
 }
 
 
@@ -72,6 +72,11 @@ void CPU::RUN() {
             case 0x6C:
                 break;
             default:
+                if (CODE & 0x0F == 0x0A || CODE & 0x0F == 0x08) {
+                    ACCUMULATOR_IMPLIED(CODE);
+                    break;
+                }    
+
                 switch (CODE & 0x03) {  //Extract bits 0,1
                     case 0:
                         switch ((CODE & 0x1C) >> 2) { //Extract bits 2,3,4
@@ -128,9 +133,6 @@ void CPU::RUN() {
                             case 1:
                                 ZERO_PAGE(CODE);
                                 break;
-                            case 2:
-                                ACCUMULATOR_IMPLIED(CODE);
-                                break;
                             case 3:
                                 ABSOLUTE(CODE);
                                 break;
@@ -158,84 +160,230 @@ void CPU::RUN() {
 
 void CPU::IMMEDIATE(unsigned char OP) {
 
+    //Fetch value, increment PC
+    short VAL = FETCH(PROG_CNT++);
+    char REG = 0;
+
     switch (OP) {
         //ADC
         case 0x69:
+            ACC += VAL + (STAT & 0x01);
             break;
+        //AND
         case 0x29:
+            ACC &= VAL;
             break;
+        //CMP
         case 0xC9:
+            if (ACC >= VAL)
+                STAT |= 0x01;
+            if (ACC == VAL)
+                STAT |= 0x02;
             break;
+        //CPX
         case 0xE0:
+            if (IND_X >= VAL)
+                STAT |= 0x01;
+            if (IND_X == VAL)
+                STAT |= 0x02;
+            REG = 1;
             break;
+        //CPY
         case 0xC0:
+            if (IND_Y >= VAL)
+                STAT |= 0x01;
+            if (IND_Y == VAL)
+                STAT |= 0x02;
+            REG = 2;
             break;
+        //EOR
         case 0x49:
+            ACC ^= VAL;
             break;
+        //LDA
         case 0xA9:
+            ACC = VAL;
             break;
+        //LDX
         case 0xA2:
+            IND_X = VAL;
+            REG = 1;
             break;
+        //LDY
         case 0xA0:
+            IND_Y = VAL;
+            REG = 2;
             break;
+        //ORA
         case 0x09:
+            ACC |= VAL;
             break;
+        //SBC
         case 0xE9:
+            ACC -= VAL - ~(STAT & 0x01);
             break;
     }
+
+    if (REG == 0) {
+        if (ACC == 0)
+            STAT |= 0x02;
+        if (ACC < 0)
+            STAT |= 0x80; 
+    } else if (REG == 1) {
+        if (IND_X == 0)
+            STAT |= 0x02;
+        if (IND_X < 0)
+            STAT |= 0x80;
+    } else if (REG == 2) {
+        if (IND_Y == 0)
+            STAT |= 0x02;
+        if (IND_Y < 0)
+            STAT |= 0x80;
+    }
+    //Wait until end of 1 cycle
 
 }
 
 
  void CPU::ACCUMULATOR_IMPLIED(unsigned char OP) {
-        PROG_CNT++; //Next byte is not used so increment PC past it
+
+     char REG = 0;
+     short TEMP = ACC;
 
         switch(OP) {
+            //ASL
             case 0x0A:
+                STAT &= 0xFE;
+                STAT |= ((0x80 & ACC) >> 7);
+                ACC = ACC << 1;
+                REG = 1;
                 break;
+            //CLC
             case 0x18:
+                STAT &= 0xFE;
                 break;
+            //CLD
             case 0xD8:
+                STAT &= 0xF7;
                 break;
+            //CLI
             case 0x58:
+                STAT &= 0xFB;
                 break;
+            //CLV
             case 0xB8:
+                STAT &= 0xBF;
                 break;
+            //DEX
             case 0xCA:
+                IND_X--;
+                REG = 2;
                 break;
+            //DEY
             case 0x88:
+                IND_Y--;
+                REG = 3;
                 break;
+            //INX
             case 0xE8:
+                IND_X++;
+                REG = 2;
                 break;
+            //INY
             case 0xC8:
+                IND_Y++;
+                REG = 3;
                 break;
+            //LSR
             case 0x4A:
+                STAT &= 0xFE;
+                STAT |= (0x01 & ACC);
+                ACC = ACC >> 1;
+                REG = 1; 
                 break;
+            //NOP
             case 0xEA:
                 break;
+            //ROL
             case 0x2A:
+                TEMP = TEMP << 1;
+                TEMP |= (0x01 & STAT);
+                STAT &= 0xFE;
+                STAT |= ((0x80 & ACC) >> 7);
+                ACC = TEMP;
+                REG = 1; 
                 break;
+            //ROR
             case 0x6A:
+                TEMP = TEMP >> 1;
+                TEMP |= ((0x01 & STAT) << 7);
+                STAT &= 0xFE;
+                STAT |= (0x01 & ACC);
+                ACC = TEMP;
+                REG = 1; 
                 break;
+            //SEC
             case 0x38:
+                STAT |= 0x01;
                 break;
+            //SED
             case 0xF8:
+                STAT |= 0x08;
                 break;
+            //SEI
             case 0x78:
+                STAT |= 0x04;
                 break;
+            //TAX
             case 0xAA:
+                IND_X = ACC;
+                REG = 2;
                 break;
+            //TAY
             case 0xA8:
+                IND_Y = ACC;
+                REG = 3;
                 break;
+            //TSX
             case 0xBA:
+                IND_X = STCK_PNT;
+                REG = 2;
                 break;
+            //TXA
             case 0x8A:
+                ACC = IND_X;
+                REG = 0;
                 break;
+            //TXS
             case 0x9A:
+                STCK_PNT = IND_X;
                 break;
+            //TYA
             case 0x98:
+                ACC = IND_Y;
+                REG = 1;
                 break;
         }
+
+        if (REG == 1) {
+            if (ACC == 0)
+                STAT |= 0x02;
+            if (ACC < 0)
+                STAT |= 0x80; 
+        } else if (REG == 1) {
+            if (IND_X == 0)
+                STAT |= 0x02;
+            if (IND_X < 0)
+                STAT |= 0x80;
+        } else if (REG == 2) {
+            if (IND_Y == 0)
+                STAT |= 0x02;
+            if (IND_Y < 0)
+                STAT |= 0x80;
+        }
+        
+
+        //Wait until end of 1 cycle
 }
 
 
@@ -467,5 +615,6 @@ void CPU::ZERO_PAGE_INDEX(unsigned char OP, char IND) {
         case 0x94:
             break;
         case 0x96:
-            break;                            
+            break;    
+    }                        
 }

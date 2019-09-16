@@ -8,6 +8,7 @@ class CPU {
         void RUN();
         unsigned char FETCH(unsigned short ADDR);
         void EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME);
+        void BRANCH(char FLAG, char VAL, HR_CLOCK TIME);
         HR_CLOCK WAIT(HR_CLOCK TIME);
 
         CPU():ACC(0), IND_X(0), IND_Y(0), STAT(0x34), STCK_PNT(0xFD), PROG_CNT(0xFFFC) {}
@@ -36,11 +37,7 @@ void CPU::RUN() {
 
     auto start = std::chrono::high_resolution_clock::now();
     unsigned char CODE = FETCH(PROG_CNT++);
-    auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed = end - start;
-    //Wait until end of cycle
-
-    start = std::chrono::high_resolution_clock::now();
+    start = WAIT(start);
 
     //Main loop
     while (true) {
@@ -81,6 +78,10 @@ void CPU::RUN() {
                 if (CODE & 0x0F == 0x0A || CODE & 0x0F == 0x08) {
                     EXEC(CODE, 8, start);
                     break;
+                }
+
+                if (CODE & 0x1F == 0x10) {
+                    BRANCH(CODE >> 6, (CODE >> 5) & 0x01, start);
                 }    
 
                 switch (CODE & 0x03) {  //Extract bits 0,1
@@ -110,13 +111,12 @@ void CPU::RUN() {
         //Following is opcode fetch of next instruction
         start = std::chrono::high_resolution_clock::now();
         CODE = FETCH(PROG_CNT++);
-        WAIT(start);
+        start = WAIT(start);
     }
 }
 
 
 
-//Branch instructions get separate function
 void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
 
     unsigned char REG = 0, VAL = 0, TEMP = 0;
@@ -155,18 +155,35 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             VAL = FETCH(LOW | (HIGH << 8));
             break; }
         //Indirect-Indexed
-        case 4:
+        case 4: {
             unsigned char POINT = FETCH(PROG_CNT++);
             TIME = WAIT(TIME);
             unsigned char LOW = FETCH(POINT);
             TIME = WAIT(TIME);
             unsigned short HIGH = FETCH((POINT + 1) % 256);
             TIME = WAIT(TIME);
-            VAL = FETCH((LOW | (HIGH << 8)) + IND_Y);
+            VAL = FETCH((LOW | (HIGH << 8)) + IND_Y); //High byte always holds correct address
+            break; }
+        //Zero-Page Indexed
+        case 5:
+            VAL = FETCH(PROG_CNT++);
             TIME = WAIT(TIME);
+            VAL = (VAL + IND_X) % 256;
+            TIME = WAIT(TIME);
+            break;
+        //Absolute Indexed
+        case 6:
+        case 7: {
+            unsigned char LOW = FETCH(PROG_CNT++);
+            TIME = WAIT(TIME);
+            unsigned short HIGH = FETCH(PROG_CNT++);
+            TIME = WAIT(TIME);
+            VAL = (ADDR_TYPE == 6) ? FETCH((LOW | (HIGH << 8)) + IND_X) : FETCH((LOW | (HIGH << 8)) + IND_Y);
+            break; }
+        //Accumulator/Implied needs no timed waits
     }
 
-
+    //Will reorganize case statements to eliminate redundancy
     switch (OP) {
         //ADC
         case 0x61:
@@ -193,7 +210,12 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         //ASL
         case 0x0A:
         case 0x1E:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
         case 0x16:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
         case 0x0E:
         case 0x06:
             TIME = WAIT(TIME);
@@ -255,7 +277,12 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             break;
         //DEC
         case 0xD6:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
         case 0xDE:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
         case 0xCE:
         case 0xC6:
             TIME = WAIT(TIME);
@@ -289,7 +316,12 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             TIME = WAIT(TIME);
             TIME = WAIT(TIME);
         case 0xFE:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
         case 0xF6:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
             VAL++;
             break;
         //INX
@@ -318,6 +350,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         case 0xA6:
         case 0xAE:
         case 0xB6:
+            VAL += (IND_Y - IND_X); //For Zero-Page Indexed
         case 0xBE:
             IND_X = VAL;
             REG = 1;
@@ -338,7 +371,12 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             TIME = WAIT(TIME);
             TIME = WAIT(TIME);
         case 0x5E:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
         case 0x56:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
             STAT &= 0xFE;
             STAT |= (0x01 & ACC);
             ACC = ACC >> 1;
@@ -365,7 +403,12 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             TIME = WAIT(TIME);
             TIME = WAIT(TIME);
         case 0x3E:
-        case 0x36:  
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
+        case 0x36:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);  
             TEMP = TEMP << 1;
             TEMP |= (0x01 & STAT);
             STAT &= 0xFE;
@@ -379,7 +422,12 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             TIME = WAIT(TIME);
             TIME = WAIT(TIME);
         case 0x7E:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
         case 0x76:
+            TIME = WAIT(TIME);
+            TIME = WAIT(TIME);
             TEMP = TEMP >> 1;
             TEMP |= ((0x01 & STAT) << 7);
             STAT &= 0xFE;
@@ -415,15 +463,18 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         case 0x89:
         case 0x8D:
         case 0x91:
+            TIME = WAIT(TIME);
         case 0x95:
         case 0x99:
         case 0x9D:
+            TIME = WAIT(TIME);
             VAL = ACC;
             break;
         //STX
         case 0x86:
         case 0x8E:
         case 0x96:
+            VAL += (IND_Y - IND_X); //For Zero-Page Indexed
             VAL = IND_X;
             break;
         //STY
@@ -464,5 +515,24 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
     }
 
     //To wait out the last cycle of most instructions
+    WAIT(TIME);
+}
+
+
+//If FLAG equals VAL then take the branch
+void CPU::BRANCH(char FLAG, char VAL, HR_CLOCK TIME) {
+
+    unsigned char OPRAND = FETCH(PROG_CNT++);
+    TIME = WAIT(TIME);
+    short AMT = (OPRAND & 0xEF) - ((OPRAND & 0xEF) >> 7)*128;
+
+    if (FLAG == VAL) {
+        PROG_CNT += AMT;
+        PROG_CNT++;
+        TIME = WAIT(TIME);
+    } else {
+        PROG_CNT++;
+    }
+
     WAIT(TIME);
 }

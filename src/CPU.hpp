@@ -1,5 +1,9 @@
+//Fill in status flag changes in EXEC
+//Fill in FETCH and WAIT instructions 
+
 #include <iostream>
 #include <chrono>
+#include <thread>
 
 typedef std::chrono::time_point<std::chrono::high_resolution_clock> HR_CLOCK;
 
@@ -14,28 +18,50 @@ class CPU {
         CPU():ACC(0), IND_X(0), IND_Y(0), STAT(0x34), STCK_PNT(0xFD), PROG_CNT(0xFFFC) {}
     private:
         unsigned char RAM[2048];
+        unsigned char ACC, IND_X, IND_Y, STAT, STCK_PNT;
         unsigned short PROG_CNT;
-        unsigned char STAT, STCK_PNT, ACC, IND_X, IND_Y;
 };
 
 
-
+//Will probably include separate ROM class to use in this function
 unsigned char CPU::FETCH(unsigned short ADDR) {
-    return 0x29;
+    //0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
+ /*   if (ADDR >= 0x0800 && ADDR < 0x2000)
+        ADDR -= 0x0800;
+
+    //0x2008 -- 0x3FFF mirrors 0x2000 -- 0x2007 every 8 bytes
+    if (ADDR >= 0x2008 && ADDR < 0x4000)
+        ADDR = 0x2000 + (ADDR % 8);
+
+    if (ADDR < 0x2000)
+        return RAM[ADDR];*/
+
+    return 0x1E;
 }
 
 
 HR_CLOCK CPU::WAIT(HR_CLOCK TIME) {
-    //Take current time, then wait until 559ns have passed from parameter time value
-    //Take current time again then pass as return value
+    HR_CLOCK now = std::chrono::high_resolution_clock::now();
+    
+    auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(now - TIME);
+    if (diff.count() > 500)
+        return std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<int,std::nano> point (500);
+    struct timespec req = {0};
+    req.tv_sec = 0;
+    req.tv_nsec = 500 - diff.count();
+    nanosleep(&req, (struct timespec *)NULL);
+    
+    return std::chrono::high_resolution_clock::now();
+
 }
 
 
-//RUN should just call EXEC with addressing type
 void CPU::RUN() {
     //Generate a reset interrupt
 
-    auto start = std::chrono::high_resolution_clock::now();
+    HR_CLOCK start = std::chrono::high_resolution_clock::now();
     unsigned char CODE = FETCH(PROG_CNT++);
     start = WAIT(start);
 
@@ -75,12 +101,12 @@ void CPU::RUN() {
             case 0x6C:
                 break;
             default:
-                if (CODE & 0x0F == 0x0A || CODE & 0x0F == 0x08) {
+                if ((CODE & 0x0F) == 0x0A || (CODE & 0x0F) == 0x08) {
                     EXEC(CODE, 8, start);
                     break;
                 }
 
-                if (CODE & 0x1F == 0x10) {
+                if ((CODE & 0x1F) == 0x10) {
                     BRANCH(CODE >> 6, (CODE >> 5) & 0x01, start);
                 }    
 
@@ -107,6 +133,7 @@ void CPU::RUN() {
         }
         break;
         //At this point, all cycles of the instruction have been executed
+        //Check for interrupts before next opcode fetch
 
         //Following is opcode fetch of next instruction
         start = std::chrono::high_resolution_clock::now();
@@ -168,7 +195,10 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         case 5:
             VAL = FETCH(PROG_CNT++);
             TIME = WAIT(TIME);
-            VAL = (VAL + IND_X) % 256;
+            if (OP != 0xB6 && OP != 0x96)
+                VAL = (VAL + IND_X) % 256;
+            else
+                VAL = (VAL + IND_Y) % 256;
             TIME = WAIT(TIME);
             break;
         //Absolute Indexed
@@ -180,20 +210,22 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             TIME = WAIT(TIME);
             VAL = (ADDR_TYPE == 6) ? FETCH((LOW | (HIGH << 8)) + IND_X) : FETCH((LOW | (HIGH << 8)) + IND_Y);
             break; }
-        //Accumulator/Implied needs no timed waits
+        //Accumulator/Implied - No timed waits needed
+        default:
+            break;
     }
 
     //Will reorganize case statements to eliminate redundancy
     switch (OP) {
         //ADC
         case 0x61:
+        case 0x71:
+        case 0x79:
+        case 0x75:
+        case 0x7D:
+        case 0x6D:
         case 0x65:
         case 0x69:
-        case 0x6D:
-        case 0x71:
-        case 0x75:
-        case 0x79:
-        case 0x7D:
             ACC += VAL + (STAT & 0x01);
             break;
         //AND
@@ -208,22 +240,29 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             ACC &= VAL;
             break;
         //ASL
-        case 0x0A:
         case 0x1E:
             TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
-        case 0x16:
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
-        case 0x0E:
         case 0x06:
             TIME = WAIT(TIME);
             TIME = WAIT(TIME);
+        case 0x16:
+        case 0x0E:
+            STAT &= 0xFE;
+            STAT |= (VAL >> 7);
+            VAL = VAL << 1;
+            break;
+        case 0x0A:
+            STAT &= 0xFE;
+            STAT |= (ACC >> 7);
+            ACC = ACC << 1;
             break;
         //BIT
         case 0x24:
         case 0x2C:
+            STAT &= 0x3F;
+            STAT |= (VAL & 0xC0);
+            if ((ACC & VAL) == 0)
+                STAT |= 0x02;
             break;
         //CLC
         case 0x18:
@@ -276,13 +315,9 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             REG = 2;
             break;
         //DEC
-        case 0xD6:
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
         case 0xDE:
             TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
+        case 0xD6:
         case 0xCE:
         case 0xC6:
             TIME = WAIT(TIME);
@@ -311,14 +346,10 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             ACC ^= VAL;
             break;
         //INC
-        case 0xEE:
-        case 0xE6:
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
         case 0xFE:
             TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
+        case 0xEE:
+        case 0xE6:
         case 0xF6:
             TIME = WAIT(TIME);
             TIME = WAIT(TIME);
@@ -350,7 +381,6 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         case 0xA6:
         case 0xAE:
         case 0xB6:
-            VAL += (IND_Y - IND_X); //For Zero-Page Indexed
         case 0xBE:
             IND_X = VAL;
             REG = 1;
@@ -366,20 +396,21 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             break;
         //LSR
         case 0x4A:
-        case 0x4E:
-        case 0x46:
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
+            STAT &= 0xFE;
+            STAT |= (0x01 & ACC);
+            ACC = ACC >> 1;
+            REG = 1; 
+            break;
         case 0x5E:
             TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
+        case 0x4E:
+        case 0x46:
         case 0x56:
             TIME = WAIT(TIME);
             TIME = WAIT(TIME);
             STAT &= 0xFE;
-            STAT |= (0x01 & ACC);
-            ACC = ACC >> 1;
+            STAT |= (0x01 & VAL);
+            VAL = VAL >> 1;
             REG = 1; 
             break;
         //NOP
@@ -398,17 +429,19 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             break;
         //ROL
         case 0x2A:
-        case 0x2E:
-        case 0x26:
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
+            TEMP = TEMP << 1;
+            TEMP |= (0x01 & STAT);
+            STAT &= 0xFE;
+            STAT |= ((0x80 & ACC) >> 7);
+            ACC = TEMP;
+            break;
         case 0x3E:
             TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
+        case 0x2E:
+        case 0x26:
         case 0x36:
             TIME = WAIT(TIME);
-            TIME = WAIT(TIME);  
+            TIME = WAIT(TIME);
             TEMP = TEMP << 1;
             TEMP |= (0x01 & STAT);
             STAT &= 0xFE;
@@ -417,14 +450,16 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             break;
         //ROR
         case 0x6A:
-        case 0x6E:
-        case 0x66:
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
+            TEMP = TEMP >> 1;
+            TEMP |= ((0x01 & STAT) << 7);
+            STAT &= 0xFE;
+            STAT |= (0x01 & ACC);
+            ACC = TEMP;
+            break;
         case 0x7E:
             TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
-            TIME = WAIT(TIME);
+        case 0x6E:
+        case 0x66:
         case 0x76:
             TIME = WAIT(TIME);
             TIME = WAIT(TIME);
@@ -458,23 +493,21 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             STAT |= 0x04;
             break;
         //STA
+        case 0x91:
+        case 0x9D:
+        case 0x99:
+            TIME = WAIT(TIME);
         case 0x81:
         case 0x85:
         case 0x89:
         case 0x8D:
-        case 0x91:
-            TIME = WAIT(TIME);
         case 0x95:
-        case 0x99:
-        case 0x9D:
-            TIME = WAIT(TIME);
             VAL = ACC;
             break;
         //STX
         case 0x86:
         case 0x8E:
         case 0x96:
-            VAL += (IND_Y - IND_X); //For Zero-Page Indexed
             VAL = IND_X;
             break;
         //STY
@@ -513,7 +546,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             REG = 1;
             break;       
     }
-
+    //Some instructions write back to memory! Should be done here
     //To wait out the last cycle of most instructions
     WAIT(TIME);
 }

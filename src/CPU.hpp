@@ -1,7 +1,6 @@
 //Fill in FETCH instruction -- To be completed later
 //Testing to be done
-
-//Next commit: Finished flag status changes (overflow done), finished oops cycles, finished stack access instructions
+//Handle interrupts
 
 #include <iostream>
 #include <chrono>
@@ -17,6 +16,7 @@ class CPU {
         void BRANCH(char FLAG, char VAL, HR_CLOCK TIME);
         void STACK_PUSH(unsigned char BYTE);
         unsigned char STACK_POP();
+        void INTERRUPT_HANDLE();
         HR_CLOCK WAIT(HR_CLOCK TIME);
 
         CPU():ACC(0), IND_X(0), IND_Y(0), STAT(0x34), STCK_PNT(0xFD), PROG_CNT(0xFFFC) {}
@@ -71,7 +71,15 @@ HR_CLOCK CPU::WAIT(HR_CLOCK TIME) {
 }
 
 
+void INTERRUPT_HANDLE() {
+    
+}
+
+
 void CPU::RUN() {
+
+    unsigned char LOW = 0, HIGH = 0;
+    unsigned short POINT = 0;
     //Generate a reset interrupt
 
     HR_CLOCK start = std::chrono::high_resolution_clock::now();
@@ -181,7 +189,7 @@ void CPU::RUN() {
                 break;
             //JSR
             case 0x20:
-                unsigned char LOW = FETCH(PROG_CNT++);
+                LOW = FETCH(PROG_CNT++);
                 start = WAIT(start);
 
                 start = WAIT(start);
@@ -190,9 +198,9 @@ void CPU::RUN() {
                 start = WAIT(start);
 
                 STACK_PUSH(PROG_CNT & 0x00FF);
-                start = WAIT(time);
+                start = WAIT(start);
 
-                unsigned char HIGH = FETCH(PROG_CNT);
+                HIGH = FETCH(PROG_CNT);
                 PROG_CNT &= 0;
                 PROG_CNT |= LOW;
                 PROG_CNT |= (HIGH << 8);
@@ -200,10 +208,10 @@ void CPU::RUN() {
                 break;
             //JMP - Absolute
             case 0x4C:
-                unsigned char LOW = FETCH(PROG_CNT++);
+                LOW = FETCH(PROG_CNT++);
                 start = WAIT(start);
 
-                unsigned char HIGH = FETCH(PROG_CNT);
+                HIGH = FETCH(PROG_CNT);
                 PROG_CNT &= 0;
                 PROG_CNT |= LOW;
                 PROG_CNT |= (HIGH << 8);
@@ -211,13 +219,13 @@ void CPU::RUN() {
                 break;
             //JMP - Indirect Absolute
             case 0x6C:
-                unsigned char LOW = FETCH(PROG_CNT++);
+                LOW = FETCH(PROG_CNT++);
                 start = WAIT(start);
 
-                unsigned char HIGH = FETCH(PROG_CNT++);
+                HIGH = FETCH(PROG_CNT++);
                 start = WAIT(start);
 
-                unsigned short POINT = ((HIGH << 8) | LOW);
+                POINT = ((HIGH << 8) | LOW);
                 start = WAIT(start);
 
                 PROG_CNT &= 0;
@@ -267,12 +275,14 @@ void CPU::RUN() {
     }
 }
 
-
+//For use in EXEC
+unsigned char VAL, TEMP, LOW, HIGH, POINT;
 
 void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
 
-    unsigned char REG = 0, VAL = 0, TEMP = 0;
+    unsigned char REG = 0;
     bool W_BACK = false;
+    unsigned char *REG_P = nullptr;
     
     switch (ADDR_TYPE) {
         //Immediate
@@ -289,34 +299,33 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             break;
         //Indexed-Indirect
         case 2: {
-            unsigned char POINT = FETCH(PROG_CNT++);
+            POINT = FETCH(PROG_CNT++);
             TIME = WAIT(TIME);
             POINT += IND_X;
             TIME = WAIT(TIME);
-            unsigned char LOW = FETCH(POINT % 256); //test result
+            LOW = FETCH(POINT % 256); //test result
             TIME = WAIT(TIME);
-            unsigned short HIGH = FETCH((POINT + 1) % 256); //test result
+            HIGH = FETCH((POINT + 1) % 256); //test result
             TIME = WAIT(TIME);
             VAL = FETCH(LOW | (HIGH << 8));
             break; }
         //Absolute
         case 3: {
-            unsigned char LOW = FETCH(PROG_CNT++);
+            LOW = FETCH(PROG_CNT++);
             TIME = WAIT(TIME);
-            unsigned short HIGH = FETCH(PROG_CNT++);
+            HIGH = FETCH(PROG_CNT++);
             TIME = WAIT(TIME);
             VAL = FETCH(LOW | (HIGH << 8));
             break; }
         //Indirect-Indexed - Potential 'oops' cycle, only for read instructions, here
         case 4: {
-            unsigned char POINT = FETCH(PROG_CNT++);
+            POINT = FETCH(PROG_CNT++);
             TIME = WAIT(TIME);
-            unsigned char LOW = FETCH(POINT);
+            LOW = FETCH(POINT);
             TIME = WAIT(TIME);
-            unsigned short HIGH = FETCH((POINT + 1) % 256); //test result
+            HIGH = FETCH((POINT + 1) % 256); //test result
             //'oops' cycle
-            bool oops = (OP != 0x91);
-            if (oops && ((LOW + IND_Y) > 255))
+            if ((OP != 0x91) && ((LOW + IND_Y) > 255))
                 TIME = WAIT(TIME); 
             TIME = WAIT(TIME);
             VAL = FETCH((LOW | (HIGH << 8)) + IND_Y);
@@ -331,9 +340,9 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         //Absolute Indexed - Potential 'oops' cycle, only for read instructions, here
         case 6:
         case 7: {
-            unsigned char LOW = FETCH(PROG_CNT++);
+            LOW = FETCH(PROG_CNT++);
             TIME = WAIT(TIME);
-            unsigned short HIGH = FETCH(PROG_CNT++);
+            HIGH = FETCH(PROG_CNT++);
             TIME = WAIT(TIME);
             //'Oops' cycle
             bool oops = (((OP & 0x0F) == 0x0D) || ((OP & 0x0F) == 0x09));
@@ -362,8 +371,8 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
                 STAT |= 0x40; 
                 STAT |= 0x01;
             }
-            ACC = TEMP;
-            REG = 1;
+            ACC = TEMP;           
+            REG_P = &ACC;
             break;
         //AND
         case 0x21:
@@ -375,7 +384,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         case 0x39:
         case 0x3D:
             ACC &= VAL;
-            REG = 1;
+            REG_P = &ACC;
             break;
         //ASL
         case 0x1E:
@@ -389,13 +398,13 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             STAT |= (VAL >> 7);
             VAL = VAL << 1;
             W_BACK = true;
-            REG = 4;
+            REG_P = &VAL;
             break;
         case 0x0A:
             STAT &= 0xFE;
             STAT |= (ACC >> 7);
             ACC = ACC << 1;
-            REG = 1;
+            REG_P = &ACC;
             break;
         //BIT
         case 0x24:
@@ -443,7 +452,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
                 STAT |= 0x01;
             if (IND_X == VAL)
                 STAT |= 0x02;
-            REG = 1;
+            REG_P = &ACC;
             break;
         //CPY
         case 0xC0:
@@ -453,7 +462,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
                 STAT |= 0x01;
             if (IND_Y == VAL)
                 STAT |= 0x02;
-            REG = 2;
+            REG_P = &IND_X;
             break;
         //DEC
         case 0xDE:
@@ -465,17 +474,17 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             TIME = WAIT(TIME);
             VAL--;
             W_BACK = true;
-            REG = 4;
+            REG_P = &VAL;
             break;
         //DEX
         case 0xCA:
             IND_X--;
-            REG = 2;
+            REG_P = &IND_X;
             break;
         //DEY
         case 0x88:
             IND_Y--;
-            REG = 3;
+            REG_P = &IND_Y;
             break;
         //EOR
         case 0x41:
@@ -487,7 +496,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         case 0x59:
         case 0x5D:
             ACC ^= VAL;
-            REG = 1;
+            REG_P = &ACC;
             break;
         //INC
         case 0xFE:
@@ -499,17 +508,17 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             TIME = WAIT(TIME);
             VAL++;
             W_BACK = true;
-            REG = 4;
+            REG_P = &VAL;
             break;
         //INX
         case 0xE8:
             IND_X++;
-            REG = 2;
+            REG_P = &IND_X;
             break;
         //INY
         case 0xC8:
             IND_Y++;
-            REG = 3;
+            REG_P = &IND_Y;
             break;
         //LDA
         case 0xA1:
@@ -521,7 +530,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         case 0xB9:
         case 0xBD:
             ACC = VAL;
-            REG = 1;
+            REG_P = &ACC;
             break;
         //LDX
         case 0xA2:
@@ -530,7 +539,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         case 0xB6:
         case 0xBE:
             IND_X = VAL;
-            REG = 2;
+            REG_P = &IND_X;
             break;
         //LDY
         case 0xA0:
@@ -539,14 +548,14 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         case 0xAC:
         case 0xBC:
             IND_Y = VAL;
-            REG = 3;
+            REG_P = &IND_Y;
             break;
         //LSR
         case 0x4A:
             STAT &= 0xFE;
             STAT |= (0x01 & ACC);
             ACC = ACC >> 1;
-            REG = 1; 
+            REG_P = &ACC;
             break;
         case 0x5E:
             TIME = WAIT(TIME);
@@ -559,7 +568,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             STAT |= (0x01 & VAL);
             VAL = VAL >> 1;
             W_BACK = true;
-            REG = 4; 
+            REG_P = &VAL;
             break;
         //NOP
         case 0xEA:
@@ -574,7 +583,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         case 0x19:
         case 0x1D:
             ACC |= VAL;
-            REG = 1;
+            REG_P = &ACC;
             break;
         //ROL
         case 0x2A:
@@ -583,7 +592,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             STAT &= 0xFE;
             STAT |= ((0x80 & ACC) >> 7);
             ACC = TEMP;
-            REG = 1;
+            REG_P = &ACC;
             break;
         case 0x3E:
             TIME = WAIT(TIME);
@@ -598,7 +607,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             STAT |= ((0x80 & VAL) >> 7);
             VAL = TEMP;
             W_BACK = true;
-            REG = 4;
+            REG_P = &VAL;
             break;
         //ROR
         case 0x6A:
@@ -607,7 +616,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             STAT |= (0x01 & ACC);
             ACC >> 1;
             ACC |= ((TEMP & 0x01) << 7);
-            REG = 1;
+            REG_P = &ACC;
             break;
         case 0x7E:
             TIME = WAIT(TIME);
@@ -622,7 +631,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             VAL >> 1;
             VAL |= ((TEMP & 0x01) << 7);
             W_BACK = true;
-            REG = 4;
+            REG_P = &VAL;
             break;
         //SBC
         case 0xE1:
@@ -640,7 +649,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
                 STAT &= 0xFE;
             }
             ACC = TEMP;
-            REG = 1;
+            REG_P = &ACC;
             break;
         //SEC
         case 0x38:
@@ -684,22 +693,22 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         //TAX
         case 0xAA:
             IND_X = ACC;
-            REG = 2;
+            REG_P = &IND_X;
             break;
         //TAY
         case 0xA8:
             IND_Y = ACC;
-            REG = 3;
+            REG_P = &IND_Y;
             break;
         //TSX
         case 0xBA:
             IND_X = STCK_PNT;
-            REG = 2;
+            REG_P = &IND_X;
             break;
         //TXA
         case 0x8A:
             ACC = IND_X;
-            REG = 1;
+            REG_P = &ACC;
             break;
         //TXS
         case 0x9A:
@@ -708,7 +717,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
         //TYA
         case 0x98:
             ACC = IND_Y;
-            REG = 1;
+            REG_P = &ACC;
             break;       
     }
     
@@ -717,19 +726,9 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
     }
 
     //Examine and change status flags if needed
-    //Could use pointer to checked register/value instead of having 4 branches of the same two statements
-    if (REG == 1) {
-        STAT = (ACC == 0) ?  (STAT | 0x02) : (STAT & 0xFD);
-        STAT = ((ACC & 0x80) > 0) ?  (STAT | 0x80) : (STAT & 0x7F);
-    } else if (REG == 2) {
-        STAT = (IND_X == 0) ?  (STAT | 0x02) : (STAT & 0xFD);
-        STAT = ((IND_X & 0x80) > 0) ?  (STAT | 0x80) : (STAT & 0x7F);
-    } else if (REG == 3) {
-        STAT = (IND_Y == 0) ?  (STAT | 0x02) : (STAT & 0xFD);
-        STAT = ((IND_Y & 0x80) > 0) ?  (STAT | 0x80) : (STAT & 0x7F);
-    } else if (REG == 4) {
-        STAT = (VAL == 0) ?  (STAT | 0x02) : (STAT & 0xFD);
-        STAT = ((VAL & 0x80) > 0) ?  (STAT | 0x80) : (STAT & 0x7F);
+    if (!REG_P) {
+        STAT = (*REG_P == 0) ?  (STAT | 0x02) : (STAT & 0xFD);
+        STAT = ((*REG_P & 0x80) > 0) ?  (STAT | 0x80) : (STAT & 0x7F); 
     }
     
 

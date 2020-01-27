@@ -1,12 +1,18 @@
 //Fill in FETCH instruction -- To be completed later
 //Testing to be done
-//Handle interrupts
+//Handle interrupts - How does CPU determine if an interrupt has occurred?
+//Think about breaking this into separate files
+//Consider replacing unsigned chars with uints from <cstdint> library
 
 #include <iostream>
 #include <chrono>
 #include <thread>
 
+//For use in EXEC
+unsigned char VAL, TEMP, LOW, HIGH, POINT;
+
 typedef std::chrono::time_point<std::chrono::high_resolution_clock> HR_CLOCK;
+
 
 class CPU {
     public:
@@ -55,15 +61,15 @@ unsigned char CPU::FETCH(unsigned short ADDR) {
 
 HR_CLOCK CPU::WAIT(HR_CLOCK TIME) {
     HR_CLOCK now = std::chrono::high_resolution_clock::now();
-    
+   
     auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(now - TIME);
-    if (diff.count() >= 500)
+    if (diff.count() >= 558)
         return std::chrono::high_resolution_clock::now();
 
-    std::chrono::duration<int,std::nano> point (500);
+    std::chrono::duration<int,std::nano> point (558); //Not sure this is needed
     struct timespec req = {0};
     req.tv_sec = 0;
-    req.tv_nsec = 500 - diff.count();
+    req.tv_nsec = 558 - diff.count();
     nanosleep(&req, (struct timespec *)NULL);
     
     return std::chrono::high_resolution_clock::now();
@@ -81,8 +87,10 @@ void CPU::RUN() {
     unsigned char LOW = 0, HIGH = 0;
     unsigned short POINT = 0;
     //Generate a reset interrupt
-
+    //First cycle has started at the end of this call
     HR_CLOCK start = std::chrono::high_resolution_clock::now();
+
+
     unsigned char CODE = FETCH(PROG_CNT++);
     start = WAIT(start);
 
@@ -91,7 +99,7 @@ void CPU::RUN() {
 
         //Stack Access Instructions and JMP
         switch (CODE) {
-            //BRK
+            //BRK - This causes an interrupt
             case 0x00:
                 PROG_CNT++;
                 STAT |= 0x10;
@@ -275,12 +283,10 @@ void CPU::RUN() {
     }
 }
 
-//For use in EXEC
-unsigned char VAL, TEMP, LOW, HIGH, POINT;
+
 
 void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
 
-    unsigned char REG = 0;
     bool W_BACK = false;
     unsigned char *REG_P = nullptr;
     

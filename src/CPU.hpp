@@ -1,8 +1,8 @@
 //Fill in FETCH instruction -- To be completed later
-//Testing to be done
 //Handle interrupts - How does CPU determine if an interrupt has occurred?
 //Think about breaking this into separate files
-//Consider replacing unsigned chars with uints from <cstdint> library
+//Replace unsigned chars and shorts with uints from <cstdint> library
+//Consider dynamic memory allocation for variables in RUN and EXEC
 
 #include <iostream>
 #include <chrono>
@@ -17,6 +17,9 @@ typedef std::chrono::time_point<std::chrono::high_resolution_clock> HR_CLOCK;
 class CPU {
     public:
         void RUN();
+        CPU():ACC(0), IND_X(0), IND_Y(0), STAT(0x34), STCK_PNT(0xFD), PROG_CNT(0xFFFC) {}
+        
+    private:
         unsigned char FETCH(unsigned short ADDR);
         void EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME);
         void BRANCH(char FLAG, char VAL, HR_CLOCK TIME);
@@ -25,8 +28,6 @@ class CPU {
         void INTERRUPT_HANDLE();
         HR_CLOCK WAIT(HR_CLOCK TIME);
 
-        CPU():ACC(0), IND_X(0), IND_Y(0), STAT(0x34), STCK_PNT(0xFD), PROG_CNT(0xFFFC) {}
-    private:
         unsigned char RAM[2048];
         unsigned char ACC, IND_X, IND_Y, STAT, STCK_PNT;
         unsigned short PROG_CNT;
@@ -34,13 +35,14 @@ class CPU {
 
 
 void CPU::STACK_PUSH(unsigned char BYTE) {
-    RAM[STCK_PNT--] = BYTE;   
+    RAM[0x0100 + STCK_PNT--] = BYTE;   
 }
 
 
 unsigned char CPU::STACK_POP() {
-    return RAM[STCK_PNT];
+    return RAM[0x0100 + STCK_PNT];
 }
+
 
 //Will probably include separate ROM class to use in this function
 unsigned char CPU::FETCH(unsigned short ADDR) {
@@ -58,7 +60,7 @@ unsigned char CPU::FETCH(unsigned short ADDR) {
     return 0x1E;
 }
 
-
+//If master clock times cycles, wait functions like this may not have to sleep, just wait on condition variable
 HR_CLOCK CPU::WAIT(HR_CLOCK TIME) {
     HR_CLOCK now = std::chrono::high_resolution_clock::now();
    

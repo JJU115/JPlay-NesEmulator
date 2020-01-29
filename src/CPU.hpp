@@ -3,12 +3,13 @@
 //Think about breaking this into separate files
 //Replace unsigned chars and shorts with uints from <cstdint> library
 //Consider dynamic memory allocation for variables in RUN and EXEC
+//Consider a template function for instruction execution
 
 #include <iostream>
 #include <chrono>
 #include <thread>
 
-//For use in EXEC
+//For use in EXEC and RUN
 unsigned char VAL, TEMP, LOW, HIGH, POINT;
 
 typedef std::chrono::time_point<std::chrono::high_resolution_clock> HR_CLOCK;
@@ -28,7 +29,7 @@ class CPU {
         void INTERRUPT_HANDLE();
         HR_CLOCK WAIT(HR_CLOCK TIME);
 
-        unsigned char RAM[2048];
+        unsigned char RAM[2048];    //Change to vector or std::array?
         unsigned char ACC, IND_X, IND_Y, STAT, STCK_PNT;
         unsigned short PROG_CNT;
 };
@@ -86,8 +87,6 @@ void INTERRUPT_HANDLE() {
 
 void CPU::RUN() {
 
-    unsigned char LOW = 0, HIGH = 0;
-    unsigned short POINT = 0;
     //Generate a reset interrupt
     //First cycle has started at the end of this call
     HR_CLOCK start = std::chrono::high_resolution_clock::now();

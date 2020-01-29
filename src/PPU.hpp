@@ -1,3 +1,8 @@
+//Make a cartridge class that has access to the game pak PRG-ROM and CHR-ROM which PPU and CPU will 
+//interface with to fetch data. Instantiate in NES.cpp and set the same object as the cartridge for 
+//both CPU and PPU - add new data member method as needed
+
+
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -17,6 +22,11 @@ class PPU {
         void POST_RENDER();
         void CYCLE();
         void VBLANK();
+
+        //Make a sprite class and turn the OAMs into vectors that store them
+        std::array<uint8_t, 2048> VRAM; //May need less based on cartridge configuration
+        std::array<uint8_t, 256> OAM_PRIMARY;
+        std::array<uint8_t, 64> OAM_SECONDARY;
 
         //group these together somehow?
         uint8_t PPUCTRL;

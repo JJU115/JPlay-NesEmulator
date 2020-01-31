@@ -1,3 +1,7 @@
+#ifndef PPU_H
+#define PPU_H
+
+
 //Make a cartridge class that has access to the game pak PRG-ROM and CHR-ROM which PPU and CPU will 
 //interface with to fetch data. Instantiate in NES.cpp and set the same object as the cartridge for 
 //both CPU and PPU - add new data member method as needed
@@ -7,15 +11,22 @@
 #include <chrono>
 #include <thread>
 #include <cstdint>
+#include <vector>
+#include "Cartridge.hpp"
 
-int16_t TICK;
+
+struct Sprite {
+
+
+};
+
 
 
 class PPU {
     public:
         void GENERATE_SIGNAL();
         PPU():PPUCTRL(0), PPUMASK(0), PPUSTATUS(0), OAMADDR(0),
-        PPUSCROLL(0), PPUADDR(0), PPUDATA(0), VRAM_ADDR(0) {}
+        PPUSCROLL(0), PPUADDR(0), PPUDATA(0), VRAM_ADDR(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0) {}
     private:
         void PRE_RENDER();
         void SCANLINE();
@@ -23,10 +34,12 @@ class PPU {
         void CYCLE();
         void VBLANK();
 
-        //Make a sprite class and turn the OAMs into vectors that store them
+        Cartridge ROM;
+
+        //Set the initial size of the OAMs?
         std::array<uint8_t, 2048> VRAM; //May need less based on cartridge configuration
-        std::array<uint8_t, 256> OAM_PRIMARY;
-        std::array<uint8_t, 64> OAM_SECONDARY;
+        std::vector<Sprite> OAM_PRIMARY;
+        std::vector<Sprite> OAM_SECONDARY;
 
         //group these together somehow?
         uint8_t PPUCTRL;
@@ -52,59 +65,4 @@ class PPU {
 };
 
 
-void PPU::CYCLE() {
-    TICK++;
-}
-
-
-
-void PPU::GENERATE_SIGNAL() {
-
-    int16_t SLINE_NUM = 0;
-
-    while (true) {
-
-        PRE_RENDER();
-
-        while (SLINE_NUM++ < 240)
-            SCANLINE();
-
-        POST_RENDER();
-        SLINE_NUM++;
-
-        while (SLINE_NUM++ < 261)
-            VBLANK();
-
-        SLINE_NUM = 0;
-    }
-}
-
-
-
-void PPU::PRE_RENDER() {
-
-    TICK = 0;
-
-    while (TICK < 321)
-        CYCLE();
-
-    
-
-}
-
-
-void PPU::SCANLINE() {
-
-}
-
-
-void PPU::POST_RENDER() {
-
-}
-
-
-void PPU::VBLANK() {
-
-}
-
-
+#endif

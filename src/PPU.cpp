@@ -11,8 +11,9 @@ void PPU::CYCLE() {
 
 
 
-void PPU::GENERATE_SIGNAL() {
+void PPU::GENERATE_SIGNAL(Cartridge& NES) {
 
+    ROM = &NES;
     uint16_t SLINE_NUM = 0;
 
     while (true) {

@@ -19,7 +19,7 @@ typedef std::chrono::time_point<std::chrono::high_resolution_clock> HR_CLOCK;
 
 class CPU {
     public:
-        void RUN();
+        void RUN(Cartridge& NES);
         CPU():ACC(0), IND_X(0), IND_Y(0), STAT(0x34), STCK_PNT(0xFD), PROG_CNT(0xFFFC) {}
         
     private:
@@ -28,10 +28,11 @@ class CPU {
         void BRANCH(char FLAG, char VAL, HR_CLOCK TIME);
         void STACK_PUSH(unsigned char BYTE);
         unsigned char STACK_POP();
-        void INTERRUPT_HANDLE();
+        void RESET(HR_CLOCK start);
+        void IRQ_NMI(HR_CLOCK start, uint16_t V);
         HR_CLOCK WAIT(HR_CLOCK TIME);
 
-        Cartridge ROM;
+        Cartridge *ROM;
 
         unsigned char RAM[2048];    //Change to vector or std::array?
         unsigned char ACC, IND_X, IND_Y, STAT, STCK_PNT;

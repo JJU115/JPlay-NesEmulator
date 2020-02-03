@@ -49,30 +49,84 @@ HR_CLOCK CPU::WAIT(HR_CLOCK TIME) {
 }
 
 
-void INTERRUPT_HANDLE() {
-    
+void CPU::RESET(HR_CLOCK start) {
+    start = WAIT(start);
+    start = WAIT(start);
+    start = WAIT(start);
+    start = WAIT(start);
+
+    STAT &= 0xEF;
+    start = WAIT(start);
+
+    PROG_CNT &= 0;
+    PROG_CNT |= FETCH(0xFFFC);
+    STAT |= 0x04;
+    start = WAIT(start);
+
+    PROG_CNT |= FETCH(0xFFFD) << 8;
+    start = WAIT(start);
 }
 
 
-void CPU::RUN() {
+void CPU::IRQ_NMI(HR_CLOCK start, uint16_t V) {
+    start = WAIT(start);
+    start = WAIT(start);
+
+    STACK_PUSH(PROG_CNT >> 8);
+    start = WAIT(start);
+
+    STACK_PUSH(PROG_CNT & 0x00FF);
+    start = WAIT(start);
+
+    STAT &= 0xEF;
+    STACK_PUSH(STAT);
+    start = WAIT(start);
+
+    PROG_CNT &= 0;
+    PROG_CNT |= FETCH(V);
+    STAT |= 0x04;
+    start = WAIT(start);
+
+    PROG_CNT |= FETCH(V) << 8;
+    start = WAIT(start);
+}
+
+
+void CPU::RUN(Cartridge& NES) {
+
+    //Load Cartridge
+    ROM = &NES;
+
+    //Interrupt bools
+    bool R = true;
+    bool N = false;
+    bool I = false;
 
     //Generate a reset interrupt
     //First cycle has started at the end of this call
     HR_CLOCK start = std::chrono::high_resolution_clock::now();
 
-
-    unsigned char CODE = FETCH(PROG_CNT++);
-    start = WAIT(start);
+    unsigned char CODE;
 
     //Main loop
     while (true) {
+
+        if (R)
+            RESET(start);
+        else if (N)
+            IRQ_NMI(start, 0xFFFA);
+        else if (I)
+            IRQ_NMI(start, 0xFFFE);
+
+
+        CODE = FETCH(PROG_CNT++);
+        start = WAIT(start);
 
         //Stack Access Instructions and JMP
         switch (CODE) {
             //BRK - This causes an interrupt
             case 0x00:
                 PROG_CNT++;
-                STAT |= 0x10;
                 start = WAIT(start);
 
                 STACK_PUSH(PROG_CNT >> 8);
@@ -81,15 +135,18 @@ void CPU::RUN() {
                 STACK_PUSH(PROG_CNT & 0x00FF);
                 start = WAIT(start);
 
+                STAT |= 0x10;
                 STACK_PUSH(STAT);
                 start = WAIT(start);
 
                 PROG_CNT &= 0;
                 PROG_CNT |= FETCH(0xFFFE);
+                STAT |= 0x04;
                 start = WAIT(start);
 
                 PROG_CNT |= FETCH(0xFFFF) << 8;
                 start = WAIT(start);
+                I = true;
                 break;
             //RTI
             case 0x40:
@@ -246,10 +303,6 @@ void CPU::RUN() {
         //At this point, all cycles of the instruction have been executed
         //Check for interrupts before next opcode fetch
 
-        //Following is opcode fetch of next instruction
-        start = std::chrono::high_resolution_clock::now();
-        CODE = FETCH(PROG_CNT++);
-        start = WAIT(start);
     }
 }
 

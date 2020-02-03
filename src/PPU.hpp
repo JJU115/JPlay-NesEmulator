@@ -24,7 +24,7 @@ struct Sprite {
 
 class PPU {
     public:
-        void GENERATE_SIGNAL();
+        void GENERATE_SIGNAL(Cartridge& NES);
         PPU():PPUCTRL(0), PPUMASK(0), PPUSTATUS(0), OAMADDR(0),
         PPUSCROLL(0), PPUADDR(0), PPUDATA(0), VRAM_ADDR(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0) {}
     private:
@@ -34,7 +34,7 @@ class PPU {
         void CYCLE();
         void VBLANK();
 
-        Cartridge ROM;
+        Cartridge *ROM;
 
         //Set the initial size of the OAMs?
         std::array<uint8_t, 2048> VRAM; //May need less based on cartridge configuration

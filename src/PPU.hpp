@@ -16,8 +16,10 @@
 
 
 struct Sprite {
-
-
+    uint8_t Y_POS;
+    uint8_t IND;
+    uint8_t ATTR;
+    uint8_t X_POS;
 };
 
 
@@ -26,12 +28,12 @@ class PPU {
     public:
         void GENERATE_SIGNAL(Cartridge& NES);
         PPU():PPUCTRL(0), PPUMASK(0), PPUSTATUS(0), OAMADDR(0),
-        PPUSCROLL(0), PPUADDR(0), PPUDATA(0), VRAM_ADDR(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0) {}
+        PPUSCROLL(0), PPUADDR(0), PPUDATA(0), VRAM_ADDR(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false) {}
     private:
         void PRE_RENDER();
         void SCANLINE();
         void POST_RENDER();
-        void CYCLE();
+        void CYCLE(uint8_t N);
         void VBLANK();
 
         Cartridge *ROM;
@@ -61,7 +63,7 @@ class PPU {
         uint16_t BGSHIFT_ONE, BGSHIFT_TWO;
         uint8_t ATTRSHIFT_ONE, ATTRSHIFT_TWO;
 
-
+        bool ODD_FRAME;
 };
 
 

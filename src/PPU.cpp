@@ -11,6 +11,11 @@ void PPU::CYCLE(uint8_t N=1) {
 }
 
 
+void PPU::RENDER_PIXEL() {
+
+}
+
+
 
 void PPU::GENERATE_SIGNAL(Cartridge& NES) {
 
@@ -22,7 +27,7 @@ void PPU::GENERATE_SIGNAL(Cartridge& NES) {
         PRE_RENDER();
 
         while (SLINE_NUM++ < 240)
-            SCANLINE();
+            SCANLINE(SLINE_NUM);
 
         POST_RENDER();
         SLINE_NUM++;
@@ -83,10 +88,42 @@ void PPU::PRE_RENDER() {
 }
 
 
-void PPU::SCANLINE() {
+//Sprite evaluation for the next scanline occurs at the same time, will probably multithread 
+void PPU::SCANLINE(uint16_t SLINE) {
 
     TICK = 0;
     uint8_t NTABLE_BYTE;
+    bool ZERO_HIT = false; //Placeholder for now
+
+    //Cycle 0 is idle
+    CYCLE();
+
+    //Cycles 1-256: Fetch tile data starting at tile 3 of current scanline
+    while (TICK < 257) {
+        switch (TICK % 8) {
+            case 0:
+                //Fetch PTable high
+                break;
+            case 1:
+                //Reload shift regs
+                break;
+            case 2:
+                //Fetch nametable byte
+                break;
+            case 4:
+                //Fetch attribute byte
+                break;
+            case 6:
+                //Fetch ptable low
+                break;
+        }
+
+        if ((TICK >= 2 && ZERO_HIT) || TICK >=4)
+            RENDER_PIXEL();
+
+        //Shift registers once
+    }
+    //Reload shift regs for cycle 257
 
 }
 

@@ -31,9 +31,10 @@ class PPU {
         PPUSCROLL(0), PPUADDR(0), PPUDATA(0), VRAM_ADDR(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false) {}
     private:
         void PRE_RENDER();
-        void SCANLINE();
+        void SCANLINE(uint16_t SLINE);
         void POST_RENDER();
         void CYCLE(uint8_t N);
+        void RENDER_PIXEL();
         void VBLANK();
 
         Cartridge *ROM;

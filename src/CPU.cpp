@@ -15,35 +15,52 @@ unsigned char CPU::STACK_POP() {
 
 
 //Will probably include separate ROM class to use in this function
-unsigned char CPU::FETCH(unsigned short ADDR) {
-    //0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
- /*   if (ADDR >= 0x0800 && ADDR < 0x2000)
-        ADDR -= 0x0800;
+uint8_t CPU::FETCH(unsigned short ADDR) {
+    //Every 0x0800 bytes of 0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
+    if (ADDR < 0x2000)
+        ADDR &= 0x7FFF;
 
     //0x2008 -- 0x3FFF mirrors 0x2000 -- 0x2007 every 8 bytes
     if (ADDR >= 0x2008 && ADDR < 0x4000)
-        ADDR = 0x2000 + (ADDR % 8);
+        ADDR &= 0x2007;
 
     if (ADDR < 0x2000)
-        return RAM[ADDR];*/
+        return RAM[ADDR];
+
+
+    if (ADDR >= 0x4020) {
+       // uint16_t a = ROM->CPU_READ(ADDR);
+        //std::cout << std::hex << a << std::endl;
+        return ROM->CPU_READ(ADDR);
+    } 
+
 
     return 0x1E;
+}
+
+//No PPU/APU registers yet, can only write to RAM 
+void CPU::WRITE(unsigned char VAL, unsigned short ADDR) {
+    if (ADDR < 0x2000)
+        ADDR &= 0x7FFF;
+
+    RAM[ADDR] = VAL;
 }
 
 //If master clock times cycles, wait functions like this may not have to sleep, just wait on condition variable
 HR_CLOCK CPU::WAIT(HR_CLOCK TIME) {
     HR_CLOCK now = std::chrono::high_resolution_clock::now();
-   
+   /*
     auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(now - TIME);
     if (diff.count() >= 558)
         return std::chrono::high_resolution_clock::now();
-
-    std::chrono::duration<int,std::nano> point (558); //Not sure this is needed
+*/
+  /*  std::chrono::duration<int,std::nano> point (558); //Not sure this is needed
     struct timespec req = {0};
     req.tv_sec = 0;
     req.tv_nsec = 558 - diff.count();
-    nanosleep(&req, (struct timespec *)NULL);
-    
+    nanosleep(&req, (struct timespec *)NULL);*/
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    std::cout << "Cycle" << std::endl;
     return std::chrono::high_resolution_clock::now();
 
 }
@@ -52,10 +69,13 @@ HR_CLOCK CPU::WAIT(HR_CLOCK TIME) {
 void CPU::RESET(HR_CLOCK start) {
     start = WAIT(start);
     start = WAIT(start);
+    STCK_PNT--;
     start = WAIT(start);
+    STCK_PNT--;
     start = WAIT(start);
 
     STAT &= 0xEF;
+    STCK_PNT--;
     start = WAIT(start);
 
     PROG_CNT &= 0;
@@ -101,23 +121,25 @@ void CPU::RUN(Cartridge& NES) {
     bool R = true;
     bool N = false;
     bool I = false;
+    bool BRK = false;
 
-    //Generate a reset interrupt
     //First cycle has started at the end of this call
     HR_CLOCK start = std::chrono::high_resolution_clock::now();
 
-    unsigned char CODE;
+    uint8_t CODE;
 
     //Main loop
     while (true) {
-
-        if (R)
+        
+        if (R) {
             RESET(start);
-        else if (N)
+            R = false;
+        } else if (N)
             IRQ_NMI(start, 0xFFFA);
-        else if (I)
+        else if (I && !BRK)
             IRQ_NMI(start, 0xFFFE);
 
+        start = std::chrono::high_resolution_clock::now();
 
         CODE = FETCH(PROG_CNT++);
         start = WAIT(start);
@@ -146,10 +168,11 @@ void CPU::RUN(Cartridge& NES) {
 
                 PROG_CNT |= FETCH(0xFFFF) << 8;
                 start = WAIT(start);
-                I = true;
+                I = BRK = true;
                 break;
             //RTI
             case 0x40:
+                N = I = false;
                 start = WAIT(start);
 
                 STCK_PNT++;
@@ -299,7 +322,7 @@ void CPU::RUN(Cartridge& NES) {
                         break;
                 }
         }
-        break;
+        //break;
         //At this point, all cycles of the instruction have been executed
         //Check for interrupts before next opcode fetch
 
@@ -309,7 +332,7 @@ void CPU::RUN(Cartridge& NES) {
 
 
 void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
-
+  
     bool W_BACK = false;
     unsigned char *REG_P = nullptr;
     
@@ -643,7 +666,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             TEMP = STAT;
             STAT &= 0xFE;
             STAT |= (0x01 & ACC);
-            ACC >> 1;
+            ACC = ACC >> 1;
             ACC |= ((TEMP & 0x01) << 7);
             REG_P = &ACC;
             break;
@@ -657,7 +680,7 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
             TEMP = STAT;
             STAT &= 0xFE;
             STAT |= (0x01 & VAL);
-            VAL >> 1;
+            VAL = VAL >> 1;
             VAL |= ((TEMP & 0x01) << 7);
             W_BACK = true;
             REG_P = &VAL;
@@ -753,14 +776,13 @@ void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
     if (W_BACK) {
         //Writeback VAL to where it came from, have to save address calculated when discerning addressing type
     }
-
+    
     //Examine and change status flags if needed
-    if (!REG_P) {
+    if (REG_P) {
         STAT = (*REG_P == 0) ?  (STAT | 0x02) : (STAT & 0xFD);
         STAT = ((*REG_P & 0x80) > 0) ?  (STAT | 0x80) : (STAT & 0x7F); 
     }
     
-
     //To wait out the last cycle of most instructions
     WAIT(TIME);
 }

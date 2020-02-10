@@ -23,7 +23,8 @@ class CPU {
         CPU():ACC(0), IND_X(0), IND_Y(0), STAT(0x34), STCK_PNT(0xFD), PROG_CNT(0xFFFC) {}
         
     private:
-        unsigned char FETCH(unsigned short ADDR);
+        uint8_t FETCH(unsigned short ADDR);
+        void WRITE(unsigned char VAL, unsigned short ADDR);
         void EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME);
         void BRANCH(char FLAG, char VAL, HR_CLOCK TIME);
         void STACK_PUSH(unsigned char BYTE);

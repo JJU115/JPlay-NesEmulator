@@ -20,7 +20,7 @@ void Cartridge::LOAD(char *FILE) {
 
     char *H = new char[16];
     CPU_LINE.read(H, 16);
-
+    
     if ((H[0] == 'N' && H[1] == 'E' && H[2] == 'S') && (H[3] == 0x1A))
         std::cout << "NES file loaded\n";
 
@@ -52,7 +52,7 @@ uint8_t Cartridge::CPU_READ(uint16_t ADDR) {
     uint16_t A = M->CPU_ACCESS(ADDR);
     if (A >= 0x8000)
         CPU_LINE.seekg(A - 0x8000, std::ios::cur);
-    
+
     CPU_LINE.read(C_BUF, 1);
     CPU_LINE.seekg(0x7FFF - A, std::ios::cur);
     

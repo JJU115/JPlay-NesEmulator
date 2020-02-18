@@ -1,8 +1,5 @@
-//Replace unsigned chars and shorts with uints from <cstdint> library
 //Logging won't always be enabled so calls to FETCH will have a bool extracted from the command line
 //Branch instructions can have an oops cycle as well, still need to implement this
-//Many instructions seem to reset flag values from 1 to 0, need to check this with MOS manual
-//Program still relies on implicit conversions, need to fix this
 
 #include "CPU.hpp"
 
@@ -10,8 +7,8 @@
 #include "6502Mnemonics.hpp" //Only if logging enabled
 
 
-unsigned char VAL, TEMP, LOW, HIGH, POINT;
-short WBACK_ADDR;
+uint8_t VAL, TEMP, LOW, HIGH, POINT;
+uint16_t WBACK_ADDR;
 std::ofstream LOG;
 std::ifstream CONTROL;
 char *B;
@@ -19,7 +16,7 @@ std::string LOG_LINE;
 std::stringstream LOG_STREAM;
 
 
-void CPU::STACK_PUSH(unsigned char BYTE) {
+void CPU::STACK_PUSH(uint8_t BYTE) {
     RAM[0x0100 + STCK_PNT--] = BYTE;   
 }
 
@@ -30,7 +27,7 @@ unsigned char CPU::STACK_POP() {
 
 
 //Will probably include separate ROM class to use in this function
-uint8_t CPU::FETCH(unsigned short ADDR, bool SAVE=false) {
+uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
     //Every 0x0800 bytes of 0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
     if (ADDR < 0x2000)
         ADDR &= 0x07FF;
@@ -60,7 +57,7 @@ uint8_t CPU::FETCH(unsigned short ADDR, bool SAVE=false) {
 }
 
 //No PPU/APU registers yet, can only write to RAM 
-void CPU::WRITE(unsigned char VAL, unsigned short ADDR) {
+void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
     if (ADDR < 0x2000)
         ADDR &= 0x07FF;
 
@@ -392,10 +389,10 @@ void CPU::RUN(Cartridge& NES) {
 
 
 
-void CPU::EXEC(unsigned char OP, char ADDR_TYPE, HR_CLOCK TIME) {
+void CPU::EXEC(uint8_t OP, char ADDR_TYPE, HR_CLOCK TIME) {
   
     bool W_BACK = false;
-    unsigned char *REG_P = nullptr;
+    uint8_t *REG_P = nullptr;
     
     switch (ADDR_TYPE) {
         //Immediate
@@ -876,7 +873,7 @@ void CPU::BRANCH(char FLAG, char VAL, HR_CLOCK TIME) {
             break;
     }
     
-    unsigned char OPRAND = FETCH(PROG_CNT++, true);
+    uint8_t OPRAND = FETCH(PROG_CNT++, true);
     TIME = WAIT(TIME);
   
     if (FLAG == VAL) {

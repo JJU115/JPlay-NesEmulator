@@ -52,13 +52,14 @@ void PPU::PRE_RENDER() {
     while (TICK < 321)
         CYCLE();
 
+    CYCLE(2);
     //NTABLE_BYTE = FETCH(0x2000 | (VRAM_ADDR & 0x0FFF));
     CYCLE(2);
     //ATTRSHIFT_ONE = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0X07));
     CYCLE(2);
     //BGSHIFT_ONE =  ROM.FETCH_CHRROM(NTABLE_BYTE); //fine y determines which byte of tile to get
     CYCLE(2);
-    //BGSHIFT_ONE = ROM.FETCH_CHRROM(NTABLE_BYTE); //8 bytes higher
+    //BGSHIFT_ONE |= (ROM.FETCH_CHRROM(NTABLE_BYTE) << 8); //8 bytes higher
     if ((VRAM_ADDR & 0x001F) == 31) { // if coarse X == 31
         VRAM_ADDR &= ~0x001F;          // coarse X = 0
         VRAM_ADDR ^= 0x0400;           // switch horizontal nametable
@@ -66,25 +67,24 @@ void PPU::PRE_RENDER() {
         VRAM_ADDR += 1;                // increment coarse X
 
     CYCLE(2);
-
     //NTABLE_BYTE = FETCH(0x2000 | (VRAM_ADDR & 0x0FFF));
     CYCLE(2);
     //ATTRSHIFT_TWO = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0X07));
     CYCLE(2);
     //BGSHIFT_TWO =  ROM.FETCH_CHRROM(NTABLE_BYTE); //fine y determines which byte of tile to get
     CYCLE(2);
-    //BGSHIFT_TWO = ROM.FETCH_CHRROM(NTABLE_BYTE); //8 bytes higher
+    //BGSHIFT_TWO |= (ROM.FETCH_CHRROM(NTABLE_BYTE) << 8); //8 bytes higher
     if ((VRAM_ADDR & 0x001F) == 31) { // if coarse X == 31
         VRAM_ADDR &= ~0x001F;          // coarse X = 0
         VRAM_ADDR ^= 0x0400;           // switch horizontal nametable
     } else
         VRAM_ADDR += 1;                // increment coarse X
 
-    //Last 2 of 2nd tile fetch and last 4 of scanline (skip last on odd frames)
+    //Last 4 cycles of scanline (skip last on odd frames)
     if (ODD_FRAME)
-        CYCLE(5);
+        CYCLE(3);
     else
-        CYCLE(6);
+        CYCLE(4);
 }
 
 
@@ -98,14 +98,16 @@ void PPU::SCANLINE(uint16_t SLINE) {
     //Cycle 0 is idle
     CYCLE();
 
-    //Cycles 1-256: Fetch tile data starting at tile 3 of current scanline
+    //Cycles 1-256: Fetch tile data starting at tile 3 of current scanline (first two fetched from previous scanline)
     while (TICK < 257) {
         switch (TICK % 8) {
             case 0:
                 //Fetch PTable high
                 break;
             case 1:
-                //Reload shift regs
+                //Reload shift regs - First reload only on cycle 9
+                if (TICK == 1)
+                    break;
                 break;
             case 2:
                 //Fetch nametable byte

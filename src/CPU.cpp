@@ -1,5 +1,6 @@
 //Logging won't always be enabled so calls to FETCH will have a bool extracted from the command line
 //Branch instructions can have an oops cycle as well, still need to implement this
+//Reconsider using local over global vars for val, temp, low, high....
 
 #include "CPU.hpp"
 
@@ -45,23 +46,27 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
 
     if (ADDR >= 0x4020) {
        if (SAVE) {
-            uint8_t L = ROM->CPU_READ(ADDR);
+            uint8_t L = ROM->CPU_ACCESS(ADDR);
             LOG << std::hex << int(L) << " ";
             return L;
        }
-        return ROM->CPU_READ(ADDR);
+        return ROM->CPU_ACCESS(ADDR);
     } 
 
 
     return 0;
 }
 
-//No PPU/APU registers yet, can only write to RAM 
+//No PPU/APU registers or PRG-RAM/CHR-RAM yet, can only write to RAM 
 void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
-    if (ADDR < 0x2000)
+    if (ADDR < 0x2000) {
         ADDR &= 0x07FF;
+        RAM[ADDR] = VAL;
+    }
 
-    RAM[ADDR] = VAL;
+    if (ADDR >= 0x4020)
+        ROM->CPU_ACCESS(ADDR, VAL, false);
+    
 }
 
 //If master clock times cycles, wait functions like this may not have to sleep, just wait on condition variable
@@ -77,13 +82,13 @@ HR_CLOCK CPU::WAIT(HR_CLOCK TIME) {
     req.tv_sec = 0;
     req.tv_nsec = 558 - diff.count();
     nanosleep(&req, (struct timespec *)NULL);*/
-    std::this_thread::sleep_for(std::chrono::microseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     std::cout << "Cycle" << std::endl;
     return std::chrono::high_resolution_clock::now();
 
 }
 
-
+//Push the status reg onto the stack?
 void CPU::RESET(HR_CLOCK start) {
     start = WAIT(start);
     start = WAIT(start);
@@ -101,7 +106,7 @@ void CPU::RESET(HR_CLOCK start) {
     STAT |= 0x04;
     start = WAIT(start);
 
-    PROG_CNT |= FETCH(0xFFFD) << 8;
+    PROG_CNT |= (FETCH(0xFFFD) << 8);
     start = WAIT(start);
 }
 
@@ -132,18 +137,19 @@ void CPU::IRQ_NMI(HR_CLOCK start, uint16_t V) {
 
 void CPU::RUN(Cartridge& NES) {
     RAM.fill(0); //Clear RAM
+
     //Enable logging
     LOG.open("CPU_LOG.txt", std::ios::trunc | std::ios::out);
-    CONTROL.open("NESTEST_LOG.txt");
-    B = new char[6];
+    //CONTROL.open("NESTEST_LOG.txt");
+    //B = new char[6];
     //Load Cartridge
     ROM = &NES;
 
     //To run nestest.nes on auto
-    PROG_CNT = 0xC000;
+    //PROG_CNT = 0xC000;
 
     //Interrupt bools
-    bool R = false;//true;
+    bool R = true;//false for nestest;
     bool N = false;
     bool I = false;
     bool BRK = false;
@@ -366,24 +372,18 @@ void CPU::RUN(Cartridge& NES) {
         //Check for interrupts before next opcode fetch
       
         LOG << OPCODES[CODE] << '\t' << '\t';
-        CONTROL.get(B, 6);
-        CONTROL.getline(B, 6);
+        //CONTROL.get(B, 6);
+       // CONTROL.getline(B, 6);
         LOG << LOG_STREAM.str();
 
-        if (B != OPCODES[CODE]) {
+       /* if (B != OPCODES[CODE]) {
             std::cout << "Instruction mismatch: " << B << " != " << OPCODES[CODE] << std::endl;
             break;
-        }
+        }*/
 
-        if (RAM[2] != 0) {
-            std::cout << "Fail with code: " << RAM[2];
-            break;
-        }
-
-        if (RAM[3] != 0) {
-            std::cout << "Fail with code: " << RAM[3];
-            break;
-        }
+        std::cout << FETCH(0x6000) << '\n';
+        std::cout << FETCH(0x6004) << '\n';
+        
     }
 }
 

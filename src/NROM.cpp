@@ -1,8 +1,8 @@
 #include "NROM.hpp"
 
 
-uint16_t NROM::CPU_ACCESS(uint16_t ADDR) {
-
+uint32_t NROM::CPU_READ(uint16_t ADDR) {
+   
     if (PRG_BANKS == 2)
         return ADDR;
     else
@@ -11,6 +11,6 @@ uint16_t NROM::CPU_ACCESS(uint16_t ADDR) {
 }
 
 
-uint16_t NROM::PPU_ACCESS(uint16_t ADDR) {
+uint16_t NROM::PPU_READ(uint16_t ADDR) {
     return ADDR;
 }

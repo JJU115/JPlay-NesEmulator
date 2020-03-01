@@ -2,7 +2,6 @@
 #define CPU_H
 
 //Fill in FETCH instruction -- To be completed later
-//Replace unsigned chars and shorts with uints from <cstdint> library
 
 #include <iostream>
 #include <chrono>
@@ -31,7 +30,6 @@ class CPU {
 
         Cartridge *ROM;
 
-        //unsigned char RAM[2048];    //Change to vector or std::array?
         std::array<uint8_t, 2048> RAM;
         uint8_t ACC, IND_X, IND_Y, STAT, STCK_PNT;
         uint16_t PROG_CNT;

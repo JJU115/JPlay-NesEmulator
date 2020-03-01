@@ -8,16 +8,12 @@
 
 class Cartridge {
     public:
-       // Cartridge& operator=(const Cartridge& C);
         void LOAD(char *FILE);
-        uint8_t CPU_READ(uint16_t ADDR);
+        uint8_t CPU_ACCESS(uint16_t ADDR, uint8_t VAL=0, bool R=true);
         uint8_t PPU_READ(uint16_t ADDR);
 
     private:
-        std::ifstream CPU_LINE;
-        std::ifstream PPU_LINE;
-        std::streampos CPU_POS;
-        std::streampos PPU_POS;
+        std::ifstream CPU_LINE1;
 
         char *C_BUF;
         char *P_BUF;

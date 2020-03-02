@@ -16,8 +16,10 @@
 
 
 struct Sprite {
-
-
+    uint8_t Y_POS;
+    uint8_t IND;
+    uint8_t ATTR;
+    uint8_t X_POS;
 };
 
 
@@ -26,13 +28,14 @@ class PPU {
     public:
         void GENERATE_SIGNAL(Cartridge& NES);
         PPU():PPUCTRL(0), PPUMASK(0), PPUSTATUS(0), OAMADDR(0),
-        PPUSCROLL(0), PPUADDR(0), PPUDATA(0), VRAM_ADDR(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0) {}
+        PPUSCROLL(0), PPUADDR(0), PPUDATA(0), VRAM_ADDR(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false) {}
     private:
         void PRE_RENDER();
-        void SCANLINE();
-        void POST_RENDER();
-        void CYCLE();
+        void SCANLINE(uint16_t SLINE);
+        void CYCLE(uint8_t N);
+        void RENDER_PIXEL();
         void VBLANK();
+        void PRE_SLINE_TILE_FETCH();
 
         Cartridge *ROM;
 
@@ -61,7 +64,11 @@ class PPU {
         uint16_t BGSHIFT_ONE, BGSHIFT_TWO;
         uint8_t ATTRSHIFT_ONE, ATTRSHIFT_TWO;
 
+        std::vector<uint16_t> SPR_PAT; //Supposed to be 8 pairs of 8-bit shift registers
+        std::vector<uint8_t> SPR_ATTRS;
+        std::vector<uint8_t> SPR_XPOS;
 
+        bool ODD_FRAME;
 };
 
 

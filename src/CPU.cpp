@@ -88,7 +88,6 @@ HR_CLOCK CPU::WAIT(HR_CLOCK TIME) {
 
 }
 
-//Push the status reg onto the stack?
 void CPU::RESET(HR_CLOCK start) {
     start = WAIT(start);
     start = WAIT(start);

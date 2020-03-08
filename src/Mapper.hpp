@@ -16,6 +16,7 @@ class Mapper {
     protected:
         uint8_t PRG_BANKS;  //In 16KB
         uint8_t CHR_BANKS;  //In 8KB
+        uint8_t NT_MIRROR;
 
 };
 

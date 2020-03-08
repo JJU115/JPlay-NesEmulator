@@ -14,6 +14,7 @@
 void Cartridge::LOAD(char *FILE) {
     //Error handle if needed
     CPU_LINE1.open(FILE, std::ios::in | std::ios::binary);
+    PPU_LINE1.open(FILE, std::ios::in | std::ios::binary);
 
     if (CPU_LINE1.is_open())
         std::cout << "ROM loaded\n";
@@ -25,8 +26,13 @@ void Cartridge::LOAD(char *FILE) {
     if ((H[0] == 'N') && (H[1] == 'E') && (H[2] == 'S') && (H[3] == 0x1A))
         std::cout << "NES file loaded\n";
 
-    if ((H[6] & 0x04) != 0)
+    if ((H[6] & 0x04) != 0) {
         CPU_LINE1.seekg(528);
+        PPU_LINE1.seekg(544 + (H[4] * 16384));
+    } else {
+        PPU_LINE1.seekg(16 + (H[4] * 16384));
+    }
+
 
     std::cout << "Header read\n";
     uint8_t MAP_NUM = (((H[6] & 0xF0) >> 4) | (H[7] & 0xF0));
@@ -34,7 +40,7 @@ void Cartridge::LOAD(char *FILE) {
     //Load the mapper
     //Need some sort of dictionary to store (mapper#, mapper class) pairs, for now just if statements
     if (MAP_NUM == 0) 
-        M = new NROM(H[4], H[5]);
+        M = new NROM(H[4], H[5], (H[6] & 0x01));
     else if (MAP_NUM == 1)
         M = new MMC1(H[4], H[5]);
 
@@ -68,7 +74,13 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
 
 
 //PPU_LINE position sits at start of CHR ROM
-uint8_t Cartridge::PPU_READ(uint16_t ADDR) {
+uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, bool NT_M) {
+
+    if (NT_M)
+        return M->PPU_READ(ADDR);
+        
+    uint16_t A = M->PPU_READ(ADDR);
+
     return 0;
 }
 

@@ -32,10 +32,12 @@ class PPU {
     private:
         void PRE_RENDER();
         void SCANLINE(uint16_t SLINE);
-        void CYCLE(uint8_t N);
+        void CYCLE(uint16_t N);
         void RENDER_PIXEL();
-        void VBLANK();
+        void Y_INCREMENT();
+        void X_INCREMENT();
         void PRE_SLINE_TILE_FETCH();
+        uint8_t FETCH(uint16_t ADDR);
 
         Cartridge *ROM;
 
@@ -64,7 +66,7 @@ class PPU {
         uint16_t BGSHIFT_ONE, BGSHIFT_TWO;
         uint8_t ATTRSHIFT_ONE, ATTRSHIFT_TWO;
 
-        std::vector<uint16_t> SPR_PAT; //Supposed to be 8 pairs of 8-bit shift registers
+        std::vector<uint8_t> SPR_PAT; //Supposed to be 8 pairs of 8-bit shift registers
         std::vector<uint8_t> SPR_ATTRS;
         std::vector<uint8_t> SPR_XPOS;
 

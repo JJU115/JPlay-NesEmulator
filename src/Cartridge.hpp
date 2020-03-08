@@ -10,10 +10,11 @@ class Cartridge {
     public:
         void LOAD(char *FILE);
         uint8_t CPU_ACCESS(uint16_t ADDR, uint8_t VAL=0, bool R=true);
-        uint8_t PPU_READ(uint16_t ADDR);
+        uint16_t PPU_ACCESS(uint16_t ADDR, bool NT_M=false);
 
     private:
         std::ifstream CPU_LINE1;
+        std::ifstream PPU_LINE1;
 
         char *C_BUF;
         char *P_BUF;

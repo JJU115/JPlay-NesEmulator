@@ -1,6 +1,9 @@
 #include <cstdint>
 #include "PPU.hpp"
 
+std::mutex PPU_MTX;
+std::condition_variable PPU_CV;
+std::unique_lock<std::mutex> PPU_LCK(PPU_MTX);
 
 uint16_t TICK;
 
@@ -19,7 +22,7 @@ uint8_t PPU::FETCH(uint16_t ADDR) {
     if ((ADDR >= 0) && (ADDR <= 0x1FFF))
         return ROM->PPU_ACCESS(ADDR);
 
-    //Nametables
+    //Nametables - Addresses need to be properly translated to array indices, 0x2000 will be index 0 for example and so on
     if ((ADDR >= 0x2000) && (ADDR <= 0x2FFF))
         return VRAM[ROM->PPU_ACCESS(ADDR, true)];
 
@@ -32,9 +35,13 @@ uint8_t PPU::FETCH(uint16_t ADDR) {
 }
 
 
-void PPU::CYCLE(uint16_t N=1) {
-    while (N-- > 0)
+void PPU::CYCLE(uint16_t N) {
+    while (N-- > 0) {
+        PPU_CV.wait(PPU_LCK);
+        //std::this_thread::sleep_for(std::chrono::milliseconds(100));
         TICK++;
+    }
+    std::cout << "cycle\n";
 }
 
 
@@ -44,9 +51,8 @@ void PPU::RENDER_PIXEL() {
 
 
 
-void PPU::GENERATE_SIGNAL(Cartridge& NES) {
+void PPU::GENERATE_SIGNAL() {
 
-    ROM = &NES;
     uint16_t SLINE_NUM = 0;
 
     while (true) {
@@ -55,18 +61,21 @@ void PPU::GENERATE_SIGNAL(Cartridge& NES) {
 
         while (SLINE_NUM++ < 240)
             SCANLINE(SLINE_NUM);
-
+        std::cout << "Entering post render\n";
         CYCLE(341); //Post-render
         SLINE_NUM++;
 
         PPUSTATUS |= 0x80; //VBLANK flag is actually only set in the 2nd tick of scanline 241
         //VBLANK will cause NMI if PPUCTRL allows it, 
+        if ((PPUCTRL & 0x80) != 0)
+            //Initiate NMI
+            
         while (SLINE_NUM++ < 261)
             CYCLE(341);
 
         SLINE_NUM = 0;
         ODD_FRAME = ~ODD_FRAME;
-
+        std::cout << "One frame rendered\n";
         break; //Only render one frame for now
     }
 }
@@ -80,6 +89,8 @@ void PPU::PRE_RENDER() {
     uint8_t NTABLE_BYTE;
 
     CYCLE();
+    PPUSTATUS &= 0x7F;  //Signal end of Vblank
+
     while (TICK < 321) {
         if ((TICK % 8 == 0) && (TICK < 256))
            X_INCREMENT();
@@ -97,6 +108,7 @@ void PPU::PRE_RENDER() {
         CYCLE(3);
     else
         CYCLE(4);
+    std::cout << "Pre render done\n";
 }
 
 
@@ -197,6 +209,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
     //Cycle 337-340
     CYCLE(4); //Supposed to be nametable fetches identical to fetches at start of next scanline
+    std::cout << "Scanline complete\n";
 }
 
 
@@ -229,7 +242,7 @@ void PPU::X_INCREMENT() {
 void PPU::PRE_SLINE_TILE_FETCH() {
 
     uint8_t NTABLE_BYTE;
-
+    std::cout << "Preline tile fetch\n";
     CYCLE(2);
     NTABLE_BYTE = FETCH(0x2000 | (VRAM_ADDR & 0x0FFF));
     CYCLE(2);
@@ -239,7 +252,7 @@ void PPU::PRE_SLINE_TILE_FETCH() {
     CYCLE(2);
     BGSHIFT_TWO = FETCH(((PPUCTRL & 0x10) >> 1) + (NTABLE_BYTE * 16) + 8 + ((VRAM_ADDR & 0x7000) >> 12)); //8 bytes higher
     X_INCREMENT();
-
+    std::cout << "Tile 1 done\n";
     CYCLE(2);
     NTABLE_BYTE = FETCH(0x2000 | (VRAM_ADDR & 0x0FFF));
     CYCLE(2);
@@ -249,4 +262,106 @@ void PPU::PRE_SLINE_TILE_FETCH() {
     CYCLE(2);
     BGSHIFT_TWO |= (FETCH(((PPUCTRL & 0x10) >> 1) + (NTABLE_BYTE * 16) + 8 + ((VRAM_ADDR & 0x7000) >> 12)) << 8); //8 bytes higher
     X_INCREMENT();
+    std::cout << "Tile 2 done\n";
+}
+
+
+void PPU::REG_WRITE(uint16_t DATA) {
+    switch (DATA >> 8) {
+        case 0:
+            PPUCTRL = (DATA & 0x0F);
+            break;
+        case 1:
+            PPUMASK = (DATA & 0x0F);
+            break;
+        case 2:
+            PPUSTATUS = (DATA & 0x0F);
+            break;
+        case 3:
+            OAMADDR = (DATA & 0x0F);
+            break;
+        case 4:
+            OAMDATA = (DATA & 0x0F);
+            break;
+        case 5:
+            PPUSCROLL = (DATA & 0x0F);
+            break;
+        case 6:
+            PPUADDR = (DATA & 0x0F);
+            break;
+        case 7:
+            PPUDATA = (DATA & 0x0F);
+            break;
+    }
+}
+
+
+//Sprite eval does not happen on pre-render line, only on visible scanlines: 0-239
+//Since there's no visible scanlines after 239, sprite eval doesn't strictly need to happen
+void PPU::SPRITE_EVAL(uint16_t SLINE_NUM) {
+    auto SPR_SELECT = [](uint8_t m, Sprite S) {
+        switch (m) {
+            case 0:
+                return S.Y_POS;
+            case 1:
+                return S.IND;
+            case 2:
+                return S.ATTR;
+            case 3:
+                return S.X_POS;
+        }
+    };
+
+    OAM_SECONDARY.clear();
+    //Wait until cycle 65 of scanline
+    
+    uint8_t n,m = 0;
+    int16_t DIF;
+    while (1) {
+        if (OAM_SECONDARY.size() == 8) {
+            OAM_SECONDARY.emplace_back(OAM_PRIMARY[n]); //Read y coordinate and copy into 2nd OAM
+
+            //If y coordinate in range, keep sprite, else set index as -1 to signify out of range  
+            //Take sprite size into account
+            DIF = SLINE_NUM + 1 - OAM_PRIMARY[n].Y_POS;
+            if ((PPUCTRL & 0x20) != 0) //8*16 sprite size
+                OAM_SECONDARY[n].IND = ((DIF < 0) || (DIF > 15)) ? -1 : OAM_SECONDARY[n].IND;
+            else //8*8 sprite size
+                OAM_SECONDARY[n].IND = ((DIF < 0) || (DIF > 7)) ? -1 : OAM_SECONDARY[n].IND;
+        }
+
+        n++;
+        if (n >= 64)
+            break;
+        else if (OAM_SECONDARY.size() < 8)
+            continue;
+        else if (OAM_SECONDARY.size() == 8)
+            break;
+    }
+
+    while (n < 64) {
+        DIF = SLINE_NUM + 1 - SPR_SELECT(m, OAM_PRIMARY[n]);
+        if ((PPUCTRL & 0x20) != 0) { //8*16 sprite size
+            if ((DIF < 0) || (DIF > 15)) {
+                m++;
+                if (n++ >= 64)
+                    break;
+            } else {
+                PPUSTATUS |= 0x20;
+                break;
+            }
+        } else {//8*8 sprite size
+            if ((DIF < 0) || (DIF > 7)) {
+                m++;
+                if (n++ >= 64)
+                    break;
+            } else {
+                PPUSTATUS |= 0x20;
+                break;
+            }
+        }
+    }
+    //Wait until cycle 256
+
+
 }

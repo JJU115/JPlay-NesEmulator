@@ -7,6 +7,9 @@
 #include <sstream> //Only include if logging enabled
 #include "6502Mnemonics.hpp" //Only if logging enabled
 
+std::mutex CPU_MTX;
+std::condition_variable CPU_CV;
+std::unique_lock<std::mutex> CPU_LCK(CPU_MTX);
 
 uint8_t VAL, TEMP, LOW, HIGH, POINT;
 uint16_t WBACK_ADDR;
@@ -34,8 +37,29 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
         ADDR &= 0x07FF;
 
     //0x2008 -- 0x3FFF mirrors 0x2000 -- 0x2007 every 8 bytes
-    if (ADDR >= 0x2008 && ADDR < 0x4000)
-        ADDR &= 0x2007;
+    if (ADDR >= 0x2008 && ADDR < 0x4000) {
+        switch ((ADDR & 0x2007) % 0x2000) {
+            case 0:
+                return P->PPUCTRL;
+            case 1:
+                return P->PPUMASK;
+            case 2:
+                return P->PPUSTATUS;
+            case 3:
+                return P->OAMADDR;
+            case 4:
+                return P->OAMDATA;
+            case 5:
+                return P->PPUSCROLL;
+            case 6:
+                return P->PPUADDR;
+            case 7:
+                return P->PPUDATA;
+        }
+    }
+
+    if (ADDR == 0x4014)
+        return P->OAMDMA;
 
     if (ADDR < 0x2000) {
         if (SAVE)
@@ -64,6 +88,41 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
         RAM[ADDR] = VAL;
     }
 
+    //PPU registers - WRITE_BUF stores VAL in the lower 8 bits and a number representing the register to write to
+    //in the 8th bit
+    if ((ADDR >= 0x2000) && (ADDR <= 0x3FFF)) {
+        switch ((ADDR & 0x2007) % 0x2000) {
+            case 0:
+                P->PPUCTRL = VAL;
+                break;
+            case 1:
+                P->PPUMASK = VAL;
+                break;
+            case 2:
+                P->PPUSTATUS = VAL;
+                break;
+            case 3:
+                P->OAMADDR = VAL;
+                break;
+            case 4:
+                P->OAMDATA = VAL;
+                break;
+            case 5:
+                P->PPUSCROLL = VAL;
+                break;
+            case 6:
+                P->PPUADDR = VAL;
+                break;
+            case 7:
+                P->PPUDATA = VAL;
+                break;
+        }
+    }
+
+    if (ADDR == 0x4014)
+        P->OAMDMA = VAL;
+
+
     if (ADDR >= 0x4020)
         ROM->CPU_ACCESS(ADDR, VAL, false);
     
@@ -71,17 +130,9 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
 
 //If master clock times cycles, wait functions like this may not have to sleep, just wait on condition variable
 HR_CLOCK CPU::WAIT(HR_CLOCK TIME) {
-    HR_CLOCK now = std::chrono::high_resolution_clock::now();
-   /*
-    auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(now - TIME);
-    if (diff.count() >= 558)
-        return std::chrono::high_resolution_clock::now();
-*/
-  /*  std::chrono::duration<int,std::nano> point (558); //Not sure this is needed
-    struct timespec req = {0};
-    req.tv_sec = 0;
-    req.tv_nsec = 558 - diff.count();
-    nanosleep(&req, (struct timespec *)NULL);*/
+    //Wait on condition var, will be signaled by NES.cpp main
+    //CPU_CV.wait(CPU_LCK);
+
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     std::cout << "Cycle" << std::endl;
     return std::chrono::high_resolution_clock::now();
@@ -134,15 +185,13 @@ void CPU::IRQ_NMI(HR_CLOCK start, uint16_t V) {
 }
 
 
-void CPU::RUN(Cartridge& NES) {
+void CPU::RUN() {
     RAM.fill(0); //Clear RAM
 
     //Enable logging
     LOG.open("CPU_LOG.txt", std::ios::trunc | std::ios::out);
     //CONTROL.open("NESTEST_LOG.txt");
     //B = new char[6];
-    //Load Cartridge
-    ROM = &NES;
 
     //To run nestest.nes on auto
     //PROG_CNT = 0xC000;
@@ -372,16 +421,13 @@ void CPU::RUN(Cartridge& NES) {
       
         LOG << OPCODES[CODE] << '\t' << '\t';
         //CONTROL.get(B, 6);
-       // CONTROL.getline(B, 6);
+        //CONTROL.getline(B, 6);
         LOG << LOG_STREAM.str();
 
-       /* if (B != OPCODES[CODE]) {
+      /*  if (B != OPCODES[CODE]) {
             std::cout << "Instruction mismatch: " << B << " != " << OPCODES[CODE] << std::endl;
             break;
         }*/
-
-        std::cout << FETCH(0x6000) << '\n';
-        std::cout << FETCH(0x6004) << '\n';
         
     }
 }

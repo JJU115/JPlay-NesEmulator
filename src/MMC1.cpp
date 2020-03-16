@@ -1,6 +1,6 @@
 #include "MMC1.hpp"
 
-
+//Handle nametable mirroring
 uint32_t MMC1::CPU_READ(uint16_t ADDR) {
    
     if ((ADDR >= 0x6000) && (ADDR <= 0x7FFF))

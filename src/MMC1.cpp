@@ -10,7 +10,7 @@ uint32_t MMC1::CPU_READ(uint16_t ADDR) {
 }
 
 
-uint16_t MMC1::PPU_READ(uint16_t ADDR) {
+uint16_t MMC1::PPU_READ(uint16_t ADDR, bool NT) {
     return ADDR;
 }
 

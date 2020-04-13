@@ -26,11 +26,15 @@ void Cartridge::LOAD(char *FILE) {
     if ((H[0] == 'N') && (H[1] == 'E') && (H[2] == 'S') && (H[3] == 0x1A))
         std::cout << "NES file loaded\n";
 
-    if ((H[6] & 0x04) != 0) {
+    if ((H[6] & 0x04) != 0) { //Trainer present
+        CPU_STARTPOS = 544;
+        PPU_STARTPOS = 544 + (H[4] * 16384);
         CPU_LINE1.seekg(528);
-        PPU_LINE1.seekg(544 + (H[4] * 16384));
+        PPU_LINE1.seekg(PPU_STARTPOS);
     } else {
-        PPU_LINE1.seekg(16 + (H[4] * 16384));
+        CPU_STARTPOS = 16;
+        PPU_STARTPOS = 16 + (H[4] * 16384);
+        PPU_LINE1.seekg(PPU_STARTPOS);
     }
 
 
@@ -40,7 +44,7 @@ void Cartridge::LOAD(char *FILE) {
     //Load the mapper
     //Need some sort of dictionary to store (mapper#, mapper class) pairs, for now just if statements
     if (MAP_NUM == 0) 
-        M = new NROM(H[4], H[5], (H[6] & 0x01));
+        M = new NROM(H[4], H[5], (H[6] & 0x01)); //0 = horizontal mirror, 1 = vertical mirror
     else if (MAP_NUM == 1)
         M = new MMC1(H[4], H[5]);
 
@@ -60,13 +64,13 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
         CPU_LINE1.seekg(A - 0x8000, std::ios::cur);
        //std::cout << std::hex << CPU_LINE1.tellg() << '\n';
         CPU_LINE1.read(C_BUF, 1);
-        CPU_LINE1.seekg(16, std::ios::beg); //Assuming no trainer, most nes files don't have but should still handle properly anyway
+        CPU_LINE1.seekg(CPU_STARTPOS, std::ios::beg); //Assuming no trainer, most nes files don't have but should still handle properly anyway
        // std::cout << std::hex << CPU_LINE1.tellg() << '\n';
     
         return *C_BUF;
         
     } else {
-        M->CPU_WRITE(ADDR, VAL);
+        M->CPU_WRITE(ADDR, VAL); //possible cases here differ by mapper, this will have to change when implementing more of them 
         return 0;
     }
 }
@@ -74,14 +78,22 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
 
 
 //PPU_LINE position sits at start of CHR ROM
-uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, bool NT_M) {
+//NT_M determines whether a nametable address translation takes place
+uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, bool R, bool NT_M) {
 
     if (NT_M)
-        return M->PPU_READ(ADDR);
-        
-    uint16_t A = M->PPU_READ(ADDR);
+        return M->PPU_READ(ADDR, NT_M);
 
-    return 0;
+    if (R) {  
+        uint16_t A = M->PPU_READ(ADDR, false); //If not nametable then pattern table
+        PPU_LINE1.seekg(A, std::ios::cur);
+        PPU_LINE1.read(P_BUF, 1);
+        PPU_LINE1.seekg(PPU_STARTPOS, std::ios::beg);
+    } else {
+        //Write. The only thing writable to here is the CHR data on the cartridge which might not even be possible
+    }
+
+    return *P_BUF;
 }
 
 

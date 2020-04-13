@@ -1,7 +1,9 @@
 #include "Display.hpp"
+#include "Palette.hpp"
 #include <iostream>
 
-//Of course, should do error checks for the init, createWindow, and WindowSurface functions 
+//Of course, should do error checks for the init, createWindow, and WindowSurface functions
+//Generated picture is 256*240 but overscan actually makes it 256*224 
 Display::Display() {
 
     SDL_Init(SDL_INIT_VIDEO);
@@ -12,8 +14,8 @@ Display::Display() {
 }
 
 
-void Display::RENDER_PIXEL(uint16_t num, uint32_t val) {
-    pixels[num] = val;
+void Display::RENDER_PIXEL(uint16_t num, uint8_t ind) {
+    pixels[num] = ((SYSTEM_PAL[ind].R << 24) | (SYSTEM_PAL[ind].G << 16) | (SYSTEM_PAL[ind].B << 8) | (SYSTEM_PAL[ind].A));
     SDL_UpdateTexture(nesTexture, NULL, pixels, 256 * sizeof(Uint32));
     SDL_RenderClear(nesRenderer); //All of this at the end of the update loop
     SDL_RenderCopy(nesRenderer, nesTexture, NULL, NULL);

@@ -11,7 +11,7 @@ EXE = NES.exe
 all: $(EXE)
 
 
-$(EXE): NES.o Display.o CPU.o PPU.o Cartridge.o NROM.o MMC1.o
+$(EXE): clean NES.o Display.o CPU.o PPU.o Cartridge.o NROM.o MMC1.o
 
 	$(CXX) $(FILES) $(LDFLAGS) -o $@
 

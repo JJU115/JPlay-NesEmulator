@@ -6,7 +6,7 @@ class Display {
     public:
         Display();
     private:
-        void RENDER_PIXEL(uint16_t num, uint32_t val);
+        void RENDER_PIXEL(uint16_t num, uint8_t val);
 
         SDL_Window* nesWindow;
         SDL_Renderer* nesRenderer;

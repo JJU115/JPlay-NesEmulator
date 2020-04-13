@@ -1,3 +1,4 @@
 *.exe
-NES.cpp
-nestest.nes
+*.o
+*.nes
+*.txt

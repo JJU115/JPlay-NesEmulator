@@ -28,12 +28,13 @@ void CPU::STACK_PUSH(uint8_t BYTE) {
 
 
 unsigned char CPU::STACK_POP() {
-    return RAM[0x0100 + STCK_PNT];
+    return RAM[0x0100 + ++STCK_PNT];
 }
 
 
 //May not have CPU access PPU regs directly, instead CPU will call PPU function which reads for the CPU
 uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
+    //std::cout << "CPU read of " << std::hex << int(ADDR) << '\n';
     //Every 0x0800 bytes of 0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
     if (ADDR < 0x2000)
         ADDR &= 0x07FF;
@@ -48,7 +49,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
 
     if (ADDR < 0x2000) {
         if (SAVE)
-            LOG << std::hex << int(RAM[ADDR]) << " ";
+            //LOG << std::hex << int(RAM[ADDR]) << " ";
         return RAM[ADDR];
     }
 
@@ -56,7 +57,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
     if (ADDR >= 0x4020) {
        if (SAVE) {
             uint8_t L = ROM->CPU_ACCESS(ADDR);
-            LOG << std::hex << int(L) << " ";
+            //LOG << std::hex << int(L) << " ";
             return L;
        }
         return ROM->CPU_ACCESS(ADDR);
@@ -68,6 +69,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
 
 //Like with fetch, may not have CPU directly access PPU regs
 void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
+    //std::cout << "CPU write of " << int(VAL) << " to " << std::hex << int(ADDR) << '\n';
     if (ADDR < 0x2000) {
         ADDR &= 0x07FF;
         RAM[ADDR] = VAL;
@@ -150,15 +152,15 @@ void CPU::IRQ_NMI(uint16_t V) {
     WAIT();
 
     PROG_CNT &= 0;
-    PROG_CNT |= FETCH(V);
+    PROG_CNT |= FETCH(V++);
     STAT |= 0x04;
     WAIT();
 
-    PROG_CNT |= FETCH(V) << 8;
+    PROG_CNT |= (FETCH(V) << 8);
     WAIT();
 }
 
-
+//Concerns regearding interrupts, specifically when and where to set interrupt bools, need to look into it more
 void CPU::RUN() {
     RAM.fill(0); //Clear RAM
     CTRL_IGNORE = 0;
@@ -169,11 +171,10 @@ void CPU::RUN() {
     //B = new char[6];
 
     //To run nestest.nes on auto
-    //PROG_CNT = 0xC000;
+    //PROG_CNT = 0x8000;
 
     //Interrupt bools
     bool R = true;//false for nestest;
-    bool N = false;
     bool I = false;
     bool BRK = false;
 
@@ -183,23 +184,22 @@ void CPU::RUN() {
 
     //Main loop
     while (true) {
-        //std::cout << std::hex << int(P->PPUCTRL);
         if (R) {
             RESET();
             R = false;
-        } else if (N)
+        } else if (P->GEN_NMI) {
+            P->GEN_NMI = 0;
             IRQ_NMI(0xFFFA);
-        else if (I && !BRK)
+        } else if (I && !BRK)
             IRQ_NMI(0xFFFE);
 
-        LOG << std::hex << PROG_CNT << "  ";
-
+        //LOG << std::hex << PROG_CNT << "  ";
         CODE = FETCH(PROG_CNT++);
         WAIT();
 
         //Compose a string and append after EXEC
         LOG_STREAM.str(std::string());
-        LOG << std::hex << int(CODE) << " ";
+        //LOG << std::hex << int(CODE) << " ";
         LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
         LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
         LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
@@ -234,19 +234,16 @@ void CPU::RUN() {
                 break;
             //RTI
             case 0x40:
-                N = I = false;
+                I = false;
                 WAIT();
 
-                STCK_PNT++;
                 WAIT();
 
                 STAT = STACK_POP();
-                STCK_PNT++;
                 WAIT();
 
                 PROG_CNT &= 0;
                 PROG_CNT |= STACK_POP();
-                STCK_PNT++;
                 WAIT();
 
                 PROG_CNT |= (STACK_POP() << 8);
@@ -256,12 +253,10 @@ void CPU::RUN() {
             case 0x60:
                 WAIT();
 
-                STCK_PNT++;
                 WAIT();
 
                 PROG_CNT &= 0;
                 PROG_CNT |= STACK_POP();
-                STCK_PNT++;
                 WAIT();
 
                 PROG_CNT |= (STACK_POP() << 8);
@@ -288,7 +283,6 @@ void CPU::RUN() {
             case 0x68:
                 WAIT();
 
-                STCK_PNT++;
                 WAIT();
 
                 ACC = STACK_POP();
@@ -300,7 +294,6 @@ void CPU::RUN() {
             case 0x28:
                 WAIT();
 
-                STCK_PNT++;
                 WAIT();
 
                 STAT = STACK_POP();
@@ -390,24 +383,29 @@ void CPU::RUN() {
         }
         //break;
         //At this point, all cycles of the instruction have been executed
-        //Check for interrupts before next opcode fetch
-        if (P->GEN_NMI == 1)
-            N = true;
        
-        LOG << OPCODES[CODE] << '\t' << '\t';
+        //LOG << OPCODES[CODE] << '\t' << '\t';
         //CONTROL.get(B, 6);
         //CONTROL.getline(B, 6);
-        LOG << LOG_STREAM.str();
-/*
-        if (B != OPCODES[CODE]) {
+        //LOG << LOG_STREAM.str();
+
+       /* if (B != OPCODES[CODE]) {
             std::cout << "Instruction mismatch: " << B << " != " << OPCODES[CODE] << std::endl;
             break;
         }*/
-        
     }
 }
 
+/*
+Problem: All addressing types don't distinguish between reads and writes so a write will first read the place its writing to,
+then write the value there. Doesn't affect CPU operation but causes an issue when accessing PPU registers since some registers 
+changes the write toggle, VRAM address, or temporary VRAM address. 
 
+Solved? - Moved the FETCH call from the ADDR_TYPE switch statement that initializes VAL to the individual instruction cases
+in the main switch statement. Of course this affects cycle-by-cycle accuracy marginally but allows proper functionality. CPU passes
+nestest so will reconcile with PPU operation.
+
+*/
 
 void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
   
@@ -426,7 +424,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             WAIT();
             WBACK_ADDR = (0x0000 | VAL);
             //Fetch value
-            VAL = FETCH(WBACK_ADDR);
+            //VAL = FETCH(WBACK_ADDR);
             break;
         //Indexed-Indirect
         case 2:
@@ -437,7 +435,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             WAIT();
             WBACK_ADDR |= (FETCH((POINT + IND_X + 1) % 256, true) << 8);
             WAIT();
-            VAL = FETCH(WBACK_ADDR);
+            //VAL = FETCH(WBACK_ADDR);
             break;
         //Absolute
         case 3:
@@ -446,7 +444,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             HIGH = FETCH(PROG_CNT++, true);
             WAIT();
             WBACK_ADDR = (LOW | (HIGH << 8));
-            VAL = FETCH(WBACK_ADDR);
+            //VAL = FETCH(WBACK_ADDR);
             break;
         //Indirect-Indexed - Potential 'oops' cycle, only for read instructions, here
         case 4:
@@ -459,7 +457,8 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             if ((OP != 0x91) && ((LOW + IND_Y) > 255))
                 WAIT(); 
             WAIT();
-            VAL = FETCH((LOW | (HIGH << 8)) + IND_Y);
+            WBACK_ADDR = ((LOW | (HIGH << 8)) + IND_Y);
+           // VAL = FETCH((LOW | (HIGH << 8)) + IND_Y);
             break;
         //Zero-Page Indexed
         case 5:
@@ -467,7 +466,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             WAIT();
             LOW = (OP != 0xB6 && OP != 0x96) ? (VAL + IND_X) % 256 : (VAL + IND_Y) % 256; //test result
             HIGH = 0;
-            VAL = FETCH(LOW);
+           // VAL = FETCH(LOW);
             WAIT();
             WBACK_ADDR = LOW;
             break;
@@ -483,7 +482,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             if (oops && ((ADDR_TYPE == 6 && (LOW + IND_X) > 255) || (ADDR_TYPE == 7 && (LOW + IND_Y) > 255)))
                 WAIT();
             WBACK_ADDR += (ADDR_TYPE == 7) ? IND_X : IND_Y;
-            VAL = FETCH(WBACK_ADDR);
+            //VAL = FETCH(WBACK_ADDR);
             break; }
         //Accumulator/Implied - No timed waits needed
         default:
@@ -500,6 +499,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x7D:
         case 0x6D:
         case 0x65:
+            VAL = FETCH(WBACK_ADDR);
         case 0x69:
             TEMP = ACC + VAL + (STAT & 0x01);
             STAT = (((ACC & 0x80) == (VAL & 0x80)) && ((TEMP & 0x80) != (ACC & 0x80))) ? (STAT | 0x40) : (STAT & 0xBF);
@@ -510,12 +510,13 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //AND
         case 0x21:
         case 0x25:
-        case 0x29:
+        case 0x3D:
         case 0x2D:
         case 0x31:
         case 0x35:
         case 0x39:
-        case 0x3D:
+            VAL = FETCH(WBACK_ADDR);
+        case 0x29:
             ACC &= VAL;
             REG_P = &ACC;
             break;
@@ -527,6 +528,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             WAIT();
         case 0x16:
         case 0x0E:
+            VAL = FETCH(WBACK_ADDR);
             STAT &= 0xFE;
             STAT |= (VAL >> 7);
             VAL = VAL << 1;
@@ -542,6 +544,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //BIT
         case 0x24:
         case 0x2C:
+            VAL = FETCH(WBACK_ADDR);
             STAT &= 0x3F;
             STAT |= (VAL & 0xC0);
             if ((ACC & VAL) == 0)
@@ -566,30 +569,33 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //CMP
         case 0xC1:
         case 0xC5:
-        case 0xC9:
+        case 0xDD:
         case 0xCD:
         case 0xD1:
         case 0xD5:
         case 0xD9:
-        case 0xDD:
+            VAL = FETCH(WBACK_ADDR);
+        case 0xC9:
             TEMP = ACC - VAL;
             STAT = (ACC >= VAL) ? (STAT | 0x01) : (STAT & 0xFE);
             STAT = (ACC == VAL) ? (STAT | 0x02) : (STAT & 0xFD);
             STAT = (TEMP & 0x80) ? (STAT | 0x80) : (STAT & 0x7F);
             break;
         //CPX
-        case 0xE0:
-        case 0xE4:
         case 0xEC:
+        case 0xE4:
+            VAL = FETCH(WBACK_ADDR);
+        case 0xE0:
             TEMP = IND_X - VAL;
             STAT = (IND_X >= VAL) ? (STAT | 0x01) : (STAT & 0xFE);
             STAT = (IND_X == VAL) ? (STAT | 0x02) : (STAT & 0xFD);
             STAT = (TEMP & 0x80) ? (STAT | 0x80) : (STAT & 0x7F);
             break;
         //CPY
-        case 0xC0:
-        case 0xC4:
         case 0xCC:
+        case 0xC4:
+            VAL = FETCH(WBACK_ADDR);
+        case 0xC0:
             TEMP = IND_Y - VAL;
             STAT = (IND_Y >= VAL) ? (STAT | 0x01) : (STAT & 0xFE);
             STAT = (IND_Y == VAL) ? (STAT | 0x02) : (STAT & 0xFD);
@@ -601,6 +607,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0xD6:
         case 0xCE:
         case 0xC6:
+            VAL = FETCH(WBACK_ADDR);
             WAIT();
             WAIT();
             VAL--;
@@ -620,12 +627,13 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //EOR
         case 0x41:
         case 0x45:
-        case 0x49:
+        case 0x5D:
         case 0x4D:
         case 0x51:
         case 0x55:
         case 0x59:
-        case 0x5D:
+            VAL = FETCH(WBACK_ADDR);
+        case 0x49:
             ACC ^= VAL;
             REG_P = &ACC;
             break;
@@ -635,6 +643,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0xEE:
         case 0xE6:
         case 0xF6:
+            VAL = FETCH(WBACK_ADDR);
             WAIT();
             WAIT();
             VAL++;
@@ -660,30 +669,33 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //LDA
         case 0xA1:
         case 0xA5:
-        case 0xA9:
+        case 0xBD:
         case 0xAD:
         case 0xB1:
         case 0xB5:
         case 0xB9:
-        case 0xBD:
+            VAL = FETCH(WBACK_ADDR);
+        case 0xA9:
             ACC = VAL;
             REG_P = &ACC;
             break;
         //LDX
-        case 0xA2:
+        case 0xBE:
         case 0xA6:
         case 0xAE:
         case 0xB6:
-        case 0xBE:
+            VAL = FETCH(WBACK_ADDR);
+        case 0xA2:
             IND_X = VAL;
             REG_P = &IND_X;
             break;
         //LDY
-        case 0xA0:
+        case 0xBC:
         case 0xA4:
         case 0xB4:
         case 0xAC:
-        case 0xBC:
+            VAL = FETCH(WBACK_ADDR);
+        case 0xA0:
             IND_Y = VAL;
             REG_P = &IND_Y;
             break;
@@ -699,6 +711,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x4E:
         case 0x46:
         case 0x56:
+            VAL = FETCH(WBACK_ADDR);
             WAIT();
             WAIT();
             STAT &= 0xFE;
@@ -713,12 +726,13 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //ORA
         case 0x01:
         case 0x05:
-        case 0x09:
+        case 0x1D:
         case 0x0D:
         case 0x11:
         case 0x15:
         case 0x19:
-        case 0x1D:
+            VAL = FETCH(WBACK_ADDR);
+        case 0x09:
             ACC |= VAL;
             REG_P = &ACC;
             break;
@@ -736,6 +750,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x2E:
         case 0x26:
         case 0x36:
+            VAL = FETCH(WBACK_ADDR);
             WAIT();
             WAIT();
             TEMP = VAL << 1;
@@ -760,6 +775,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x6E:
         case 0x66:
         case 0x76:
+            VAL = FETCH(WBACK_ADDR);
             WAIT();
             WAIT();
             TEMP = STAT;
@@ -773,12 +789,13 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //SBC
         case 0xE1:
         case 0xE5:
-        case 0xE9:
+        case 0xFD:
         case 0xED:
         case 0xF1:
         case 0xF5:
         case 0xF9:
-        case 0xFD:
+            VAL = FETCH(WBACK_ADDR);
+        case 0xE9:
             TEMP = ((STAT & 0x01) > 0) ? (ACC - VAL) : (ACC - VAL - 1);
             if ((STAT & 0x01) > 0)
                 STAT = (((int8_t(ACC) - int8_t(VAL)) > 127) || ((int8_t(ACC) - int8_t(VAL)) < -128)) ? (STAT ^ 0x40) : (STAT & 0xBF);  
@@ -808,7 +825,6 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             WAIT();
         case 0x81:
         case 0x85:
-        case 0x89:
         case 0x8D:
         case 0x95:
             VAL = ACC;
@@ -892,7 +908,10 @@ void CPU::BRANCH(char FLAG, char VAL) {
             FLAG = ((STAT & 0x02) >> 1);
             break;
     }
-    
+    /*LOG_STREAM << "FLAG: ";
+    LOG_STREAM << std::hex << int(FLAG);
+    LOG_STREAM << "VAL: ";
+    LOG_STREAM << std::hex << int(VAL);*/
     int8_t OPRAND = FETCH(PROG_CNT++, true);
     WAIT();
     

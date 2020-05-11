@@ -53,7 +53,6 @@ void Cartridge::LOAD(char *FILE) {
 
 //Have write return where the file pointer should point to next, in 8Kb from start of first bank?
 uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
-    
     if (R) {
         if (ADDR < 0x8000)
             return M->CPU_READ(ADDR);
@@ -80,7 +79,6 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
 //PPU_LINE position sits at start of CHR ROM
 //NT_M determines whether a nametable address translation takes place
 uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, bool R, bool NT_M) {
-
     if (NT_M)
         return M->PPU_READ(ADDR, NT_M);
 

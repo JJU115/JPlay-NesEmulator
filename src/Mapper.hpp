@@ -10,7 +10,7 @@ class Mapper {
         Mapper() {}
         Mapper(uint16_t P, uint16_t C): PRG_BANKS(P), CHR_BANKS(C) {}
         virtual uint32_t CPU_READ(uint16_t ADDR) = 0;
-        virtual uint16_t PPU_READ(uint16_t ADDR) = 0;
+        virtual uint16_t PPU_READ(uint16_t ADDR, bool NT) = 0;
         virtual void CPU_WRITE(uint16_t ADDR, uint8_t VAL) = 0;
         virtual void PPU_WRITE(uint16_t ADDR) = 0;
     protected:

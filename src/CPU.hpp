@@ -24,13 +24,13 @@ class CPU {
     private:
         uint8_t FETCH(uint16_t ADDR, bool SAVE);
         void WRITE(uint8_t VAL, uint16_t ADDR);
-        void EXEC(uint8_t OP, char ADDR_TYPE, HR_CLOCK TIME);
-        void BRANCH(char FLAG, char VAL, HR_CLOCK TIME);
+        void EXEC(uint8_t OP, char ADDR_TYPE);
+        void BRANCH(char FLAG, char VAL);
         void STACK_PUSH(uint8_t BYTE);
         unsigned char STACK_POP();
-        void RESET(HR_CLOCK start);
-        void IRQ_NMI(HR_CLOCK start, uint16_t V);
-        HR_CLOCK WAIT(HR_CLOCK TIME);
+        void RESET();
+        void IRQ_NMI(uint16_t V);
+        void WAIT();
 
         Cartridge *ROM;
         PPU *P;

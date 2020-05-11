@@ -1,0 +1,16 @@
+#include <SDL2/SDL.h>
+
+ 
+class Display {
+    friend class PPU;
+    public:
+        Display();
+        ~Display();
+    private:
+        void RENDER_PIXEL(uint16_t num, uint8_t val);
+
+        SDL_Window* nesWindow;
+        SDL_Renderer* nesRenderer;
+        SDL_Texture* nesTexture;
+        uint32_t* pixels;
+};

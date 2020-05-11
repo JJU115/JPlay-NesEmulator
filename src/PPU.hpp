@@ -13,9 +13,9 @@
 #include <cstdint>
 #include <vector>
 #include "Cartridge.hpp"
+#include "Display.hpp"
 #include <mutex>
 #include <condition_variable>
-
 
 struct Sprite {
     uint8_t Y_POS;
@@ -24,13 +24,42 @@ struct Sprite {
     uint8_t X_POS;
 };
 
+auto SPR_SELECT = [](uint8_t m, Sprite S) {
+    switch (m) {
+        case 0:
+            return S.Y_POS;
+        case 1:
+            return S.IND;
+        case 2:
+            return S.ATTR;
+        case 3:
+            return S.X_POS;
+        }
+};
+
 
 class PPU {
+    friend class CPU;
     public:
+        bool debug_wait;
         void GENERATE_SIGNAL();
-        void REG_WRITE(uint16_t DATA);
+        void REG_WRITE(uint8_t DATA, uint8_t REG);
+        uint8_t REG_READ(uint8_t REG);
         PPU(Cartridge& NES): PPUCTRL(0), PPUMASK(0), PPUSTATUS(0), OAMADDR(0), OAMDATA(0), PPUSCROLL(0), PPUADDR(0), PPUDATA(0), OAMDMA(0),
-        VRAM_ADDR(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false), ROM(&NES) {}
+        VRAM_ADDR(0), VRAM_TEMP(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false), ROM(&NES) { Screen = new Display(); }
+    private:
+        void PRE_RENDER();
+        void SCANLINE(uint16_t SLINE);
+        void CYCLE(uint16_t N=1);
+        void Y_INCREMENT();
+        void X_INCREMENT();
+        void PRE_SLINE_TILE_FETCH();
+        void SPRITE_EVAL(uint16_t SLINE_NUM);
+        uint8_t FETCH(uint16_t ADDR);
+        void WRITE(uint16_t ADDR, uint8_t DATA);
+        void nametable(std::array<uint8_t, 2048> N);
+        Cartridge *ROM;
+        Display *Screen;
 
         uint8_t PPUCTRL;
         uint8_t PPUMASK;
@@ -41,28 +70,21 @@ class PPU {
         uint8_t PPUADDR;
         uint8_t PPUDATA;
         uint8_t OAMDMA;
-    private:
-        void PRE_RENDER();
-        void SCANLINE(uint16_t SLINE);
-        void CYCLE(uint16_t N=1);
-        void RENDER_PIXEL();
-        void Y_INCREMENT();
-        void X_INCREMENT();
-        void PRE_SLINE_TILE_FETCH();
-        void SPRITE_EVAL(uint16_t SLINE_NUM);
-        uint8_t FETCH(uint16_t ADDR);
 
-        Cartridge *ROM;
+        uint8_t NMI_OCC;
+        uint8_t NMI_OUT;
+        uint8_t GEN_NMI;
 
         //Set the initial size of the OAMs?
         std::array<uint8_t, 2048> VRAM; //May need less based on cartridge configuration
         std::vector<Sprite> OAM_PRIMARY;
         std::vector<Sprite> OAM_SECONDARY;
+        std::array<uint8_t, 25> PALETTES;
 
         uint16_t VRAM_ADDR;
-        //uint16_t VRAM_TEMP;
+        uint16_t VRAM_TEMP;
         //uint8_t FINE_X;
-        //uint8_t WRITE_TOGGLE
+        bool WRITE_TOGGLE;
 
         uint16_t BGSHIFT_ONE, BGSHIFT_TWO;
         uint8_t ATTRSHIFT_ONE, ATTRSHIFT_TWO;

@@ -41,7 +41,7 @@ auto SPR_SELECT = [](uint8_t m, Sprite S) {
 class PPU {
     friend class CPU;
     public:
-        bool debug_wait;
+        long cycle_cnt;
         void GENERATE_SIGNAL();
         void REG_WRITE(uint8_t DATA, uint8_t REG);
         uint8_t REG_READ(uint8_t REG);

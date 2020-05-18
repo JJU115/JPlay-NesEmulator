@@ -1,5 +1,7 @@
 #include <cstdint>
 #include "PPU.hpp"
+#include <time.h>
+#include "Palette.hpp"
 
 std::mutex PPU_MTX;
 std::condition_variable PPU_CV;
@@ -79,30 +81,27 @@ void PPU::WRITE(uint16_t ADDR, uint8_t DATA) {
 
 void PPU::CYCLE(uint16_t N) {
     while (N-- > 0) {
-        PPU_CV.wait(PPU_LCK);
-        //if (debug_wait)
-          //  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        //PPU_CV.wait(PPU_LCK);
+        PPU_CV.wait_for(PPU_LCK, std::chrono::nanoseconds(186));
         TICK++;
-        //P_LOG << "PPU Tick\n";
+        cycle_cnt++;
     }
     //P_LOG << "PPU Tick\n";
 }
 
 
 void PPU::GENERATE_SIGNAL() {
+    cycle_cnt = 0;
+    clock_t t;
     VRAM.fill(0);
-    debug_wait = false;
     uint16_t SLINE_NUM = 0;
     NMI_OCC = 0;
     NMI_OUT = 0;
     GEN_NMI = 0;
-    SDL_Event evt;
-    P_LOG.open("PPU_LOG.txt", std::ios::trunc | std::ios::out);
+    //P_LOG.open("PPU_LOG.txt", std::ios::trunc | std::ios::out);
     while (true) {
-
-        SDL_PollEvent(&evt);
-
-        if ((PPUMASK & 0x08) != 0) {
+        t = clock();
+       /*if ((PPUMASK & 0x08) != 0) {
             debug_wait = true;
             VRAM_ADDR = 0;
             VRAM_TEMP = 0;
@@ -110,7 +109,7 @@ void PPU::GENERATE_SIGNAL() {
             PALETTES[0] = 0x3F;
             PALETTES[1] = 0x21;
             PALETTES[3] = 0x12;
-        }
+        }*/
 
         PRE_RENDER();
 
@@ -119,7 +118,7 @@ void PPU::GENERATE_SIGNAL() {
                 SCANLINE(SLINE_NUM);
         }
 
-        //P_LOG << "Entering post render\n";
+        //std::cout << "Entering post render\n";
         CYCLE(341); //Post-render, don't think any of the below happens as it does in every other scanline but will keep commented here for now
         /*Y_INCREMENT();
         CYCLE();
@@ -129,7 +128,7 @@ void PPU::GENERATE_SIGNAL() {
         }
         CYCLE(85);*/
         SLINE_NUM++;
-        //P_LOG << "Post render done";
+        //std::cout << "Post render done\n";
         PPUSTATUS |= 0x80; //VBLANK flag is actually only set in the 2nd tick of scanline 241
         NMI_OCC = 1;
         //VBLANK will cause NMI if PPUCTRL allows it, there's some complication here since NMIs can still happen during vblank, will need to resolve later
@@ -150,10 +149,10 @@ void PPU::GENERATE_SIGNAL() {
         NMI_OCC = 0;
         SLINE_NUM = 0;
         ODD_FRAME = ~ODD_FRAME;
-        P_LOG << "One frame rendered\n";
-        if (debug_wait)
-            break; //Only render one frame for now
-        
+        //std::cout << "One frame rendered\n";
+        t = clock() - t;
+        std::cout << "Cycles per second: " << ((cycle_cnt)/(((float)t)/CLOCKS_PER_SEC)) << '\n';
+        cycle_cnt=0;
     }
 
     delete Screen;
@@ -203,7 +202,7 @@ void PPU::PRE_RENDER() {
         CYCLE(3);
     else
         CYCLE(4);
-    P_LOG << "Pre render done\n";
+    //std::cout << "Pre render done\n";
 }
 
 
@@ -216,6 +215,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
     TICK = 0;
     uint8_t NTABLE_BYTE, PTABLE_LOW, PTABLE_HIGH, ATTR_BYTE;
     uint16_t PIXEL;
+    uint32_t COL;
     bool ZERO_HIT = false; //Placeholder for now, starting at cycle 2, check if opaque pixel of sprite 0 overlaps an opaque background pixel
 
     //Cycle 0 is idle
@@ -273,7 +273,11 @@ void PPU::SCANLINE(uint16_t SLINE) {
             PIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x30) >> 2) : ((ATTRSHIFT_ONE & 0xC0) >> 4);
 
         //nesdev says there's a delay in rendering and the 1st pixel is output only at cycle 4?
-        Screen->RENDER_PIXEL((SLINE * 256) + TICK - 1, FETCH(PIXEL));
+        //Screen->RENDER_PIXEL((SLINE * 256) + TICK - 1, FETCH(PIXEL));
+
+        COL = FETCH(PIXEL); 
+        //Rather than call the render function each cycle, load a pixel into a texture each cycle then blit the full texture after the rendering cycles are done
+        Screen->pixels[(SLINE * 256) + TICK - 1] = ((SYSTEM_PAL[COL].R << 24) | (SYSTEM_PAL[COL].G << 16) | (SYSTEM_PAL[COL].B << 8) | 0xFF);
 
         //Shift registers once
         //Pattern table data for one tile are stored in the lower 8 bytes of the two shift registers
@@ -286,6 +290,9 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
         CYCLE();
     }
+
+    Screen->RENDER_FRAME();
+
     //Copy all horizontal bits from t to v at tick 257 if rendering enabled
     if ((PPUMASK & 0x08) || (PPUMASK & 0x10)) {
         VRAM_ADDR &= 0xFBE0;
@@ -332,7 +339,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
     //Cycle 337-340
     CYCLE(4); //Supposed to be nametable fetches identical to fetches at start of next scanline
-    P_LOG << "Scanline complete\n";
+    //std::cout << "Scanline complete\n";
 }
 
 

@@ -48,7 +48,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
         return P->OAMDMA;
 
     if (ADDR < 0x2000) {
-        if (SAVE)
+        //if (SAVE)
             //LOG << std::hex << int(RAM[ADDR]) << " ";
         return RAM[ADDR];
     }
@@ -57,7 +57,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
     if (ADDR >= 0x4020) {
        if (SAVE) {
             uint8_t L = ROM->CPU_ACCESS(ADDR);
-            //LOG << std::hex << int(L) << " ";
+                //LOG << std::hex << int(L) << " ";
             return L;
        }
         return ROM->CPU_ACCESS(ADDR);
@@ -108,7 +108,8 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
 //If master clock times cycles, wait functions like this may not have to sleep, just wait on condition variable
 void CPU::WAIT() {
     //Wait on condition var, will be signaled by NES.cpp main
-    CPU_CV.wait(CPU_LCK);
+    //CPU_CV.wait(CPU_LCK);
+    CPU_CV.wait_for(CPU_LCK, std::chrono::nanoseconds(558));
     //std::cout << "CPU Tick" << std::endl;
     if (CTRL_IGNORE < 30000)
         CTRL_IGNORE++;

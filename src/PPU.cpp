@@ -100,16 +100,7 @@ void PPU::GENERATE_SIGNAL() {
     GEN_NMI = 0;
     //P_LOG.open("PPU_LOG.txt", std::ios::trunc | std::ios::out);
     while (true) {
-        t = clock();
-       /*if ((PPUMASK & 0x08) != 0) {
-            debug_wait = true;
-            VRAM_ADDR = 0;
-            VRAM_TEMP = 0;
-            PPUCTRL = 0x10;
-            PALETTES[0] = 0x3F;
-            PALETTES[1] = 0x21;
-            PALETTES[3] = 0x12;
-        }*/
+        auto t1 = std::chrono::high_resolution_clock::now();
 
         PRE_RENDER();
 
@@ -117,7 +108,7 @@ void PPU::GENERATE_SIGNAL() {
             if ((PPUMASK & 0x08) != 0)
                 SCANLINE(SLINE_NUM);
         }
-
+        Screen->RENDER_FRAME();
         //std::cout << "Entering post render\n";
         CYCLE(341); //Post-render, don't think any of the below happens as it does in every other scanline but will keep commented here for now
         /*Y_INCREMENT();
@@ -150,8 +141,8 @@ void PPU::GENERATE_SIGNAL() {
         SLINE_NUM = 0;
         ODD_FRAME = ~ODD_FRAME;
         //std::cout << "One frame rendered\n";
-        t = clock() - t;
-        std::cout << "Cycles per second: " << ((cycle_cnt)/(((float)t)/CLOCKS_PER_SEC)) << '\n';
+        auto t2 = std::chrono::high_resolution_clock::now();
+        std::cout << "Time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << '\n';
         cycle_cnt=0;
     }
 
@@ -290,8 +281,6 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
         CYCLE();
     }
-
-    Screen->RENDER_FRAME();
 
     //Copy all horizontal bits from t to v at tick 257 if rendering enabled
     if ((PPUMASK & 0x08) || (PPUMASK & 0x10)) {

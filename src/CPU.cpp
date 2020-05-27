@@ -8,7 +8,7 @@
 #include "6502Mnemonics.hpp" //Only if logging enabled
 
 std::mutex CPU_MTX;
-std::condition_variable CPU_CV;
+std::condition_variable CPU_COND;
 std::unique_lock<std::mutex> CPU_LCK(CPU_MTX);
 
 uint8_t VAL, TEMP, LOW, HIGH, POINT;
@@ -48,8 +48,8 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
         return P->OAMDMA;
 
     if (ADDR < 0x2000) {
-        //if (SAVE)
-            //LOG << std::hex << int(RAM[ADDR]) << " ";
+        if (SAVE)
+            LOG << std::hex << int(RAM[ADDR]) << " ";
         return RAM[ADDR];
     }
 
@@ -57,7 +57,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
     if (ADDR >= 0x4020) {
        if (SAVE) {
             uint8_t L = ROM->CPU_ACCESS(ADDR);
-                //LOG << std::hex << int(L) << " ";
+                LOG << std::hex << int(L) << " ";
             return L;
        }
         return ROM->CPU_ACCESS(ADDR);
@@ -105,12 +105,11 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
     
 }
 
-//If master clock times cycles, wait functions like this may not have to sleep, just wait on condition variable
+
 void CPU::WAIT() {
-    //Wait on condition var, will be signaled by NES.cpp main
-    //CPU_CV.wait(CPU_LCK);
-    CPU_CV.wait_for(CPU_LCK, std::chrono::nanoseconds(558));
-    //std::cout << "CPU Tick" << std::endl;
+    //Wait on condition var, will be signaled by the PPU every time it goes through 3 ticks
+    //CPU_COND.wait(CPU_LCK);
+    std::this_thread::sleep_for(std::chrono::nanoseconds(558));
     if (CTRL_IGNORE < 30000)
         CTRL_IGNORE++;
 }
@@ -170,7 +169,7 @@ void CPU::RUN() {
     LOG.open("CPU_LOG.txt", std::ios::trunc | std::ios::out);
     //CONTROL.open("NESTEST_LOG.txt");
     //B = new char[6];
-
+    //std::cout << "CPU start\n";
     //To run nestest.nes on auto
     //PROG_CNT = 0x8000;
 
@@ -200,7 +199,7 @@ void CPU::RUN() {
 
         //Compose a string and append after EXEC
         LOG_STREAM.str(std::string());
-        //LOG << std::hex << int(CODE) << " ";
+        LOG << std::hex << int(CODE) << " ";
         LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
         LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
         LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
@@ -385,10 +384,10 @@ void CPU::RUN() {
         //break;
         //At this point, all cycles of the instruction have been executed
        
-        //LOG << OPCODES[CODE] << '\t' << '\t';
+        LOG << OPCODES[CODE] << '\t' << '\t';
         //CONTROL.get(B, 6);
         //CONTROL.getline(B, 6);
-        //LOG << LOG_STREAM.str();
+        LOG << LOG_STREAM.str();
 
        /* if (B != OPCODES[CODE]) {
             std::cout << "Instruction mismatch: " << B << " != " << OPCODES[CODE] << std::endl;

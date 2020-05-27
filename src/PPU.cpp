@@ -1,11 +1,13 @@
 #include <cstdint>
 #include "PPU.hpp"
+#include <SDL_thread.h>
+#include <SDL_timer.h>
 #include <time.h>
 #include "Palette.hpp"
 
-std::mutex PPU_MTX;
-std::condition_variable PPU_CV;
-std::unique_lock<std::mutex> PPU_LCK(PPU_MTX);
+extern SDL_cond* mainPPUCond;
+extern SDL_mutex* mainThreadMutex;
+extern std::condition_variable CPU_COND;
 
 uint16_t TICK;
 std::ofstream P_LOG;
@@ -78,20 +80,18 @@ void PPU::WRITE(uint16_t ADDR, uint8_t DATA) {
     //P_LOG << "After write: " << std::hex << int(FETCH(ADDR)) << '\n';
 }
 
-
 void PPU::CYCLE(uint16_t N) {
-    while (N-- > 0) {
-        //PPU_CV.wait(PPU_LCK);
-        PPU_CV.wait_for(PPU_LCK, std::chrono::nanoseconds(186));
-        TICK++;
-        cycle_cnt++;
-    }
+    while (N-- > 0)
+        std::this_thread::sleep_for(std::chrono::nanoseconds(186));
+        //if (++TICK % 3 == 0)
+            //CPU_COND.notify_one();
+
     //P_LOG << "PPU Tick\n";
 }
 
 
 void PPU::GENERATE_SIGNAL() {
-    cycle_cnt = 0;
+    framePixels = new uint32_t[256 * 240];
     clock_t t;
     VRAM.fill(0);
     uint16_t SLINE_NUM = 0;
@@ -102,13 +102,27 @@ void PPU::GENERATE_SIGNAL() {
     while (true) {
         auto t1 = std::chrono::high_resolution_clock::now();
 
+        //For testing dktest.nes only
+        /*if ((PPUMASK & 0x08) != 0) {
+            VRAM_ADDR = 0;
+            VRAM_TEMP = 0;
+            PPUCTRL = 0x10;
+            PALETTES[0] = 0x3F;
+            PALETTES[1] = 0x21;
+            PALETTES[3] = 0x12;
+        }*/
+
+        //These two calls ensure the main thread is waiting on its condition variable before the PPU goes any further
+        SDL_LockMutex(mainThreadMutex);
+        SDL_UnlockMutex(mainThreadMutex);
+    
         PRE_RENDER();
 
         while (SLINE_NUM++ < 240) {
             if ((PPUMASK & 0x08) != 0)
                 SCANLINE(SLINE_NUM);
         }
-        Screen->RENDER_FRAME();
+
         //std::cout << "Entering post render\n";
         CYCLE(341); //Post-render, don't think any of the below happens as it does in every other scanline but will keep commented here for now
         /*Y_INCREMENT();
@@ -142,11 +156,11 @@ void PPU::GENERATE_SIGNAL() {
         ODD_FRAME = ~ODD_FRAME;
         //std::cout << "One frame rendered\n";
         auto t2 = std::chrono::high_resolution_clock::now();
-        std::cout << "Time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << '\n';
-        cycle_cnt=0;
+        //std::cout << "Frame time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << '\n';
+        //Get main to render the frame
+        //nametable(VRAM);
+        SDL_CondSignal(mainPPUCond);
     }
-
-    delete Screen;
 }
 
 
@@ -154,6 +168,7 @@ void PPU::GENERATE_SIGNAL() {
 //also, since pre-render should make the same memory accesses as a regular scanline, the vram address register changes
 //Nesdev says vertical scroll bits are reloaded during pre-render if rendering is enabled?
 void PPU::PRE_RENDER() {
+    //auto t1 = std::chrono::high_resolution_clock::now();
     TICK = 0;
     uint8_t NTABLE_BYTE;
 
@@ -194,6 +209,8 @@ void PPU::PRE_RENDER() {
     else
         CYCLE(4);
     //std::cout << "Pre render done\n";
+    //auto t2 = std::chrono::high_resolution_clock::now();
+    //std::cout << "Pre-render time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << '\n';
 }
 
 
@@ -202,16 +219,16 @@ void PPU::PRE_RENDER() {
 //What is enabled or disabled if rendering is disabled? VRAM reg updates? Byte fetching?
 //May eliminate one attribute shift register
 void PPU::SCANLINE(uint16_t SLINE) {
-
+    //auto t1 = std::chrono::high_resolution_clock::now();
     TICK = 0;
     uint8_t NTABLE_BYTE, PTABLE_LOW, PTABLE_HIGH, ATTR_BYTE;
     uint16_t PIXEL;
     uint32_t COL;
     bool ZERO_HIT = false; //Placeholder for now, starting at cycle 2, check if opaque pixel of sprite 0 overlaps an opaque background pixel
-
+    
     //Cycle 0 is idle
     CYCLE();
-    //P_LOG << SLINE << ":  ";
+    P_LOG << SLINE << ":  \n";
     //Cycles 1-256: Fetch tile data starting at tile 3 of current scanline (first two fetched from previous scanline)
     //Remember the vram address updates
     while (TICK < 257) {
@@ -264,12 +281,11 @@ void PPU::SCANLINE(uint16_t SLINE) {
             PIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x30) >> 2) : ((ATTRSHIFT_ONE & 0xC0) >> 4);
 
         //nesdev says there's a delay in rendering and the 1st pixel is output only at cycle 4?
-        //Screen->RENDER_PIXEL((SLINE * 256) + TICK - 1, FETCH(PIXEL));
 
         COL = FETCH(PIXEL); 
         //Rather than call the render function each cycle, load a pixel into a texture each cycle then blit the full texture after the rendering cycles are done
-        Screen->pixels[(SLINE * 256) + TICK - 1] = ((SYSTEM_PAL[COL].R << 24) | (SYSTEM_PAL[COL].G << 16) | (SYSTEM_PAL[COL].B << 8) | 0xFF);
-
+        framePixels[(SLINE * 256) + TICK - 1] = ((SYSTEM_PAL[COL].R << 24) | (SYSTEM_PAL[COL].G << 16) | (SYSTEM_PAL[COL].B << 8) | 0xFF);
+      
         //Shift registers once
         //Pattern table data for one tile are stored in the lower 8 bytes of the two shift registers
         //Low entry in BGSHIFT_ONE, high entry in BGSHIFT_TWO
@@ -329,6 +345,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
     //Cycle 337-340
     CYCLE(4); //Supposed to be nametable fetches identical to fetches at start of next scanline
     //std::cout << "Scanline complete\n";
+    //auto t2 = std::chrono::high_resolution_clock::now();
+    //std::cout << "Scanline time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << '\n';
 }
 
 
@@ -470,11 +488,11 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG) {
             VRAM_ADDR += ((PPUCTRL & 0x04) != 0) ? 32 : 1;
             break;
     }
-  /*  P_LOG << "PPUSCROLL: " << std::hex << int(PPUSCROLL) << '\n';
-    P_LOG << "PPUADDR: " << std::hex << int(PPUADDR) << '\n';
-    P_LOG << "PPUDATA: " << std::hex << int(PPUDATA) << '\n';
-    P_LOG << "VRAM: " << std::hex << int(VRAM_ADDR) << '\n';
-    P_LOG << "Toggle: " << WRITE_TOGGLE << '\n';*/
+   // P_LOG << "PPUSCROLL: " << std::hex << int(PPUSCROLL) << '\n';
+   // P_LOG << "PPUADDR: " << std::hex << int(PPUADDR) << '\n';
+   // P_LOG << "PPUDATA: " << std::hex << int(PPUDATA) << '\n';
+    //P_LOG << "VRAM: " << std::hex << int(VRAM_ADDR) << '\n';
+    //P_LOG << "Toggle: " << WRITE_TOGGLE << '\n';
 }
 
 
@@ -583,8 +601,9 @@ void PPU::SPRITE_EVAL(uint16_t SLINE_NUM) {
 void PPU::nametable(std::array<uint8_t, 2048> N) {
     for (int i=0; i<32; i++) {
         for (int j=0; j<32; j++) {
-            P_LOG << std::hex << int(N[i*32 + j]) << " "; 
+            std::cout << std::hex << int(N[i*32 + j]) << " "; 
         }
-        P_LOG << '\n';
+        std::cout << '\n';
     }
+    std::cout << "\n\n\n";
 }

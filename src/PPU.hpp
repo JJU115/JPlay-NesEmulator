@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <vector>
 #include "Cartridge.hpp"
-#include "Display.hpp"
 #include <mutex>
 #include <condition_variable>
 
@@ -41,12 +40,12 @@ auto SPR_SELECT = [](uint8_t m, Sprite S) {
 class PPU {
     friend class CPU;
     public:
-        long cycle_cnt;
+        uint32_t* framePixels;
         void GENERATE_SIGNAL();
         void REG_WRITE(uint8_t DATA, uint8_t REG);
         uint8_t REG_READ(uint8_t REG);
         PPU(Cartridge& NES): PPUCTRL(0), PPUMASK(0), PPUSTATUS(0), OAMADDR(0), OAMDATA(0), PPUSCROLL(0), PPUADDR(0), PPUDATA(0), OAMDMA(0),
-        VRAM_ADDR(0), VRAM_TEMP(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false), ROM(&NES) { Screen = new Display(); }
+        VRAM_ADDR(0), VRAM_TEMP(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false), WRITE_TOGGLE(false), ROM(&NES) { }
     private:
         void PRE_RENDER();
         void SCANLINE(uint16_t SLINE);
@@ -59,7 +58,6 @@ class PPU {
         void WRITE(uint16_t ADDR, uint8_t DATA);
         void nametable(std::array<uint8_t, 2048> N);
         Cartridge *ROM;
-        Display *Screen;
 
         uint8_t PPUCTRL;
         uint8_t PPUMASK;

@@ -2,3 +2,5 @@
 *.o
 *.nes
 *.txt
+src/.vscode/launch.json
+src/.vscode/tasks.json

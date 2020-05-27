@@ -15,10 +15,9 @@
 //Generated picture is 256*240 but overscan actually makes it 256*224 
 Display::Display() {
 
-    SDL_Init(SDL_INIT_VIDEO);
-    pixels = new uint32_t[256 * 240]; //Holds RGBA values for each pixel on screen
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
     nesWindow = SDL_CreateWindow("JPlay", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 256, 240, SDL_WINDOW_SHOWN);
-    nesRenderer = SDL_CreateRenderer(nesWindow, -1, SDL_RENDERER_ACCELERATED);
+    nesRenderer = SDL_CreateRenderer(nesWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     nesTexture = SDL_CreateTexture(nesRenderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 256, 240);
 }
 
@@ -29,29 +28,13 @@ Display::~Display() {
     SDL_Quit();
 }
 
-/*
-void Display::RENDER_PIXEL(uint16_t num, uint8_t ind) {
-    pixels[num] = ((SYSTEM_PAL[ind].R << 24) | (SYSTEM_PAL[ind].G << 16) | (SYSTEM_PAL[ind].B << 8) | (SYSTEM_PAL[ind].A));
-    SDL_UpdateTexture(nesTexture, NULL, pixels, 256 * sizeof(Uint32));
-    SDL_RenderClear(nesRenderer); //All of this at the end of the update loop
-    SDL_RenderCopy(nesRenderer, nesTexture, NULL, NULL);
-    SDL_RenderPresent(nesRenderer);
-}*/
 
-/*
-void Display::RENDER_PIXEL(uint16_t num, uint8_t ind) {
-    SDL_SetRenderDrawColor(nesRenderer, SYSTEM_PAL[ind].R, SYSTEM_PAL[ind].G, SYSTEM_PAL[ind].B, SYSTEM_PAL[ind].A);
-    SDL_RenderDrawPoint(nesRenderer, num%256, num/256);
-    SDL_RenderPresent(nesRenderer);
-}*/
-
-
-void Display::RENDER_FRAME() {
+void Display::RENDER_FRAME(uint32_t* nextFrame) {
     if (SDL_LockTexture(nesTexture, NULL, &frame, &pitch) != 0)
         std::cout << "Lock failed: " << SDL_GetError();
 
     framePixels = (uint32_t*)frame;
-    memcpy(framePixels, pixels, 256*960);
+    memcpy(framePixels, nextFrame, 256*960); //Can put (uint32_t*)frame here instead of using framePixels at all?
     SDL_UnlockTexture(nesTexture);
     SDL_RenderCopy(nesRenderer, nesTexture, NULL, NULL);
     SDL_RenderPresent(nesRenderer);

@@ -14,7 +14,7 @@
 void Cartridge::LOAD(char *FILE) {
     //Error handle if needed
     CPU_LINE1.open(FILE, std::ios::in | std::ios::binary);
-    PPU_LINE1.open(FILE, std::ios::in | std::ios::binary);
+    //PPU_LINE1.open(FILE, std::ios::in | std::ios::binary);
 
     if (CPU_LINE1.is_open())
         std::cout << "ROM loaded\n";
@@ -30,16 +30,31 @@ void Cartridge::LOAD(char *FILE) {
         CPU_STARTPOS = 544;
         PPU_STARTPOS = 544 + (H[4] * 16384);
         CPU_LINE1.seekg(528);
-        PPU_LINE1.seekg(PPU_STARTPOS);
+        //PPU_LINE1.seekg(PPU_STARTPOS);
     } else {
         CPU_STARTPOS = 16;
         PPU_STARTPOS = 16 + (H[4] * 16384);
-        PPU_LINE1.seekg(PPU_STARTPOS);
+        //PPU_LINE1.seekg(PPU_STARTPOS);
     }
 
 
     std::cout << "Header read\n";
     uint8_t MAP_NUM = (((H[6] & 0xF0) >> 4) | (H[7] & 0xF0));
+
+    //Copy PRG and CHR data to internal vectors
+    PRG_ROM.resize(16 * 1024 * H[4]);
+    CHR_ROM.resize(8 * 1024 * H[5]); //If H[5] is zero, board uses CHR RAM
+
+    uint8_t* P_DATA = PRG_ROM.data();
+    uint8_t* C_DATA = CHR_ROM.data();
+    char* DATA_BUF = new char[16 * 1024 * H[4]]; //Should be the greater size of chr vs prg
+    
+    CPU_LINE1.read(DATA_BUF, 16 * 1024 * H[4]);
+    memcpy(P_DATA, DATA_BUF, 16 * 1024 * H[4]);
+
+    CPU_LINE1.seekg(PPU_STARTPOS, std::ios::beg);
+    CPU_LINE1.read(DATA_BUF, 8 * 1024 * H[5]);
+    memcpy(C_DATA, DATA_BUF, 8 * 1024 * H[5]);
     
     //Load the mapper
     //Need some sort of dictionary to store (mapper#, mapper class) pairs, for now just if statements
@@ -48,25 +63,18 @@ void Cartridge::LOAD(char *FILE) {
     else if (MAP_NUM == 1)
         M = new MMC1(H[4], H[5]);
 
+
+    CPU_LINE1.close();
+    delete DATA_BUF;
 }
 
 
-//Have write return where the file pointer should point to next, in 8Kb from start of first bank?
 uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
     if (R) {
         if (ADDR < 0x8000)
             return M->CPU_READ(ADDR);
-        
-        uint32_t A = M->CPU_READ(ADDR);
-       // std::cout << std::hex << A;
-       //std::cout << std::hex << CPU_LINE1.tellg() << '\n';
-        CPU_LINE1.seekg(A - 0x8000, std::ios::cur);
-       //std::cout << std::hex << CPU_LINE1.tellg() << '\n';
-        CPU_LINE1.read(C_BUF, 1);
-        CPU_LINE1.seekg(CPU_STARTPOS, std::ios::beg); //Assuming no trainer, most nes files don't have but should still handle properly anyway
-       // std::cout << std::hex << CPU_LINE1.tellg() << '\n';
-    
-        return *C_BUF;
+
+        return PRG_ROM[M->CPU_READ(ADDR) - 0x8000];
         
     } else {
         M->CPU_WRITE(ADDR, VAL); //possible cases here differ by mapper, this will have to change when implementing more of them 
@@ -75,23 +83,15 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
 }
 
 
-
-//PPU_LINE position sits at start of CHR ROM
-//NT_M determines whether a nametable address translation takes place
 uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, bool R, bool NT_M) {
     if (NT_M)
         return M->PPU_READ(ADDR, NT_M);
 
-    if (R) {  
-        uint16_t A = M->PPU_READ(ADDR, false); //If not nametable then pattern table
-        PPU_LINE1.seekg(A, std::ios::cur);
-        PPU_LINE1.read(P_BUF, 1);
-        PPU_LINE1.seekg(PPU_STARTPOS, std::ios::beg);
+    if (R) {
+        return CHR_ROM[M->PPU_READ(ADDR, false)];  
     } else {
         //Write. The only thing writable to here is the CHR data on the cartridge which might not even be possible
     }
 
     return *P_BUF;
 }
-
-

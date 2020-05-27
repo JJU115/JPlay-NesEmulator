@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <vector>
 #include "Mapper.hpp"
 
 
@@ -14,10 +15,12 @@ class Cartridge {
 
     private:
         std::ifstream CPU_LINE1;
-        std::ifstream PPU_LINE1;
 
         uint16_t CPU_STARTPOS;
         uint32_t PPU_STARTPOS;
+
+        std::vector<uint8_t> PRG_ROM;
+        std::vector<uint8_t> CHR_ROM;
 
         char *C_BUF;
         char *P_BUF;

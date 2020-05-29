@@ -81,10 +81,10 @@ void PPU::WRITE(uint16_t ADDR, uint8_t DATA) {
 }
 
 void PPU::CYCLE(uint16_t N) {
-    while (N-- > 0)
+    while (N-- > 0) {
         std::this_thread::sleep_for(std::chrono::nanoseconds(186));
-        //if (++TICK % 3 == 0)
-            //CPU_COND.notify_one();
+        TICK++;
+    }
 
     //P_LOG << "PPU Tick\n";
 }
@@ -98,7 +98,7 @@ void PPU::GENERATE_SIGNAL() {
     NMI_OCC = 0;
     NMI_OUT = 0;
     GEN_NMI = 0;
-    //P_LOG.open("PPU_LOG.txt", std::ios::trunc | std::ios::out);
+    P_LOG.open("PPU_LOG.txt", std::ios::trunc | std::ios::out);
     while (true) {
         auto t1 = std::chrono::high_resolution_clock::now();
 
@@ -158,7 +158,7 @@ void PPU::GENERATE_SIGNAL() {
         auto t2 = std::chrono::high_resolution_clock::now();
         //std::cout << "Frame time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << '\n';
         //Get main to render the frame
-        //nametable(VRAM);
+        nametable(VRAM);
         SDL_CondSignal(mainPPUCond);
     }
 }
@@ -225,10 +225,11 @@ void PPU::SCANLINE(uint16_t SLINE) {
     uint16_t PIXEL;
     uint32_t COL;
     bool ZERO_HIT = false; //Placeholder for now, starting at cycle 2, check if opaque pixel of sprite 0 overlaps an opaque background pixel
-    
+    bool targ = false;
     //Cycle 0 is idle
     CYCLE();
-    P_LOG << SLINE << ":  \n";
+    if (targ)
+        P_LOG << SLINE << ":  \n";
     //Cycles 1-256: Fetch tile data starting at tile 3 of current scanline (first two fetched from previous scanline)
     //Remember the vram address updates
     while (TICK < 257) {
@@ -236,7 +237,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
             case 0:
                 //Fetch PTable high
                 PTABLE_HIGH = FETCH(((PPUCTRL & 0x10) << 8) | ((NTABLE_BYTE * 16) + 8 + ((VRAM_ADDR & 0x7000) >> 12)));
-                //P_LOG << "PTable high: " << std::hex << int(PTABLE_HIGH) << '\n';
+                if (targ)
+                    P_LOG << "PTable high: " << std::hex << int(PTABLE_HIGH) << '\n';
                 if (TICK != 256)
                     X_INCREMENT();
                 else
@@ -248,41 +250,52 @@ void PPU::SCANLINE(uint16_t SLINE) {
                     break;
                 BGSHIFT_ONE |= PTABLE_LOW;
                 BGSHIFT_TWO |= PTABLE_HIGH;
-                ATTRSHIFT_ONE = ATTR_BYTE;
+                ATTRSHIFT_ONE = ATTRSHIFT_TWO;
                 ATTRSHIFT_TWO = ATTR_BYTE;
                 break;
             case 2:
                 //Fetch nametable byte
                 NTABLE_BYTE = FETCH(0x2000 | (VRAM_ADDR & 0x0FFF)); //Change based on base nametable select of ppuctrl register?
-                //P_LOG << "NTable byte: " << std::hex << int(NTABLE_BYTE) << '\n';
+                if (targ)
+                    P_LOG << "NTable byte: " << std::hex << int(NTABLE_BYTE) << '\n';
                 break;
             case 4:
                 //Fetch attribute byte - since one byte controls a 4*4 tile group, fetching becomes more complicated. Need to change this:
                 ATTR_BYTE = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0x07));
-                //P_LOG << "Attribute byte: " << std::hex << int(ATTR_BYTE) << '\n';
+                if (targ)
+                    P_LOG << "Attribute byte: " << std::hex << int(ATTR_BYTE) << '\n';
                 break;
             case 6:
                 //Fetch ptable low
                 PTABLE_LOW = FETCH(((PPUCTRL & 0x10) << 8) | ((NTABLE_BYTE * 16) + ((VRAM_ADDR & 0x7000) >> 12)));
-                //P_LOG << "PTable low: " << std::hex << int(PTABLE_LOW) << '\n';
+                if (targ)
+                    P_LOG << "PTable low: " << std::hex << int(PTABLE_LOW) << '\n';
                 break;
             default:
                 break;
         }
-        //P_LOG << "1st shifter: " << std::hex << int(BGSHIFT_ONE) << '\n';
-        //P_LOG << "2nd shifter: " << std::hex << int(BGSHIFT_TWO) << '\n';
+        if (targ) {
+            P_LOG << "1st shifter: " << std::hex << int(BGSHIFT_ONE) << '\n';
+            P_LOG << "2nd shifter: " << std::hex << int(BGSHIFT_TWO) << '\n';
+            P_LOG << "Attribute shift 1: " << std::hex << int(ATTRSHIFT_ONE) << '\n';
+            P_LOG << "TICK: " << int(TICK) << '\n';
+        }
         PIXEL = 0x3F00;
         PIXEL |= ((BGSHIFT_ONE & 0x8000) != 0) ? 1 : 0;
         PIXEL |= ((BGSHIFT_TWO & 0x8000) != 0) ? 0x02 : 0;
         //Form the pixel color
-        if (((SLINE/2) % 2) == 0)
+        if ((((SLINE-1)/16) % 2) == 0)
             PIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x03) << 2) : (ATTRSHIFT_ONE & 0x0C);
         else
             PIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x30) >> 2) : ((ATTRSHIFT_ONE & 0xC0) >> 4);
 
+        if (targ) {
+            P_LOG << std::hex << int(((ATTRSHIFT_ONE & 0x30) >> 2)) << '\n';
+            P_LOG << "PIXEL: " << std::hex << PIXEL << '\n';
+        }
         //nesdev says there's a delay in rendering and the 1st pixel is output only at cycle 4?
-
         COL = FETCH(PIXEL); 
+
         //Rather than call the render function each cycle, load a pixel into a texture each cycle then blit the full texture after the rendering cycles are done
         framePixels[(SLINE * 256) + TICK - 1] = ((SYSTEM_PAL[COL].R << 24) | (SYSTEM_PAL[COL].G << 16) | (SYSTEM_PAL[COL].B << 8) | 0xFF);
       
@@ -601,9 +614,15 @@ void PPU::SPRITE_EVAL(uint16_t SLINE_NUM) {
 void PPU::nametable(std::array<uint8_t, 2048> N) {
     for (int i=0; i<32; i++) {
         for (int j=0; j<32; j++) {
-            std::cout << std::hex << int(N[i*32 + j]) << " "; 
+            P_LOG << std::hex << int(N[i*32 + j]) << " "; 
         }
-        std::cout << '\n';
+        P_LOG << '\n';
     }
-    std::cout << "\n\n\n";
+    P_LOG << "\n\nPalette:\n";
+
+    for (int k=0; k<25; k++) {
+        P_LOG << std::hex << int(PALETTES[k]) << " ";
+    }
+
+    P_LOG << "\n\n\n";
 }

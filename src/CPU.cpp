@@ -34,7 +34,7 @@ unsigned char CPU::STACK_POP() {
 
 //May not have CPU access PPU regs directly, instead CPU will call PPU function which reads for the CPU
 uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
-    //std::cout << "CPU read of " << std::hex << int(ADDR) << '\n';
+    //LOG << "CPU read of " << std::hex << int(ADDR) << '\n';
     //Every 0x0800 bytes of 0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
     if (ADDR < 0x2000)
         ADDR &= 0x07FF;
@@ -43,9 +43,6 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
     //0x2008 -- 0x3FFF mirrors 0x2000 -- 0x2007 every 8 bytes
     if (ADDR >= 0x2000 && ADDR < 0x4000)
         return P->REG_READ((ADDR & 0x2007) % 0x2000);
-        
-    if (ADDR == 0x4014)
-        return P->OAMDMA;
 
     if (ADDR < 0x2000) {
         if (SAVE)
@@ -54,10 +51,10 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
     }
 
 
-    if (ADDR >= 0x4020) {
+    if ((ADDR >= 0x4020) && (ADDR <= 0xFFFF)) {
        if (SAVE) {
             uint8_t L = ROM->CPU_ACCESS(ADDR);
-                LOG << std::hex << int(L) << " ";
+            //LOG << std::hex << int(L) << " ";
             return L;
        }
         return ROM->CPU_ACCESS(ADDR);
@@ -69,7 +66,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
 
 //Like with fetch, may not have CPU directly access PPU regs
 void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
-    //std::cout << "CPU write of " << int(VAL) << " to " << std::hex << int(ADDR) << '\n';
+    //LOG << "CPU write of " << int(VAL) << " to " << std::hex << int(ADDR) << '\n';
     if (ADDR < 0x2000) {
         ADDR &= 0x07FF;
         RAM[ADDR] = VAL;
@@ -85,31 +82,24 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
     //transfer begins at current OAM write address
     if (ADDR == 0x4014) {
         P->OAMDMA = VAL;
-        P->OAM_PRIMARY.clear();
-        WAIT();  //dummy read
-        for (uint16_t i=0; i<64; i+=4) {
+        WAIT();  
+        for (uint16_t i=0; i<256; i++) {
             WAIT();
             WAIT();
-            WAIT();
-            WAIT();
-            WAIT();
-            WAIT();
-            WAIT();
-            WAIT();
-            P->OAM_PRIMARY.emplace_back(Sprite{FETCH(VAL << 8), FETCH((VAL << 8) + 1), FETCH((VAL << 8) + 2), FETCH((VAL << 8) + 3)});
+            P->REG_WRITE(FETCH((VAL << 8) + i), 4);
         }
     }
 
-    if (ADDR >= 0x4020)
+    if ((ADDR >= 0x4020) && (ADDR <= 0xFFFF))
         ROM->CPU_ACCESS(ADDR, VAL, false);
     
 }
 
 
-void CPU::WAIT() {
+inline void CPU::WAIT() {
     //Wait on condition var, will be signaled by the PPU every time it goes through 3 ticks
     //CPU_COND.wait(CPU_LCK);
-    std::this_thread::sleep_for(std::chrono::nanoseconds(558));
+    //std::this_thread::sleep_for(std::chrono::nanoseconds(558))
     if (CTRL_IGNORE < 30000)
         CTRL_IGNORE++;
 }
@@ -134,6 +124,7 @@ void CPU::RESET() {
     PROG_CNT |= (FETCH(0xFFFD) << 8);
     WAIT();
     CTRL_IGNORE = 0;
+
 }
 
 
@@ -181,9 +172,10 @@ void CPU::RUN() {
     //First cycle has started
 
     uint8_t CODE;
-
+    
     //Main loop
     while (true) {
+        //LOG << "Interrupts - R: " << R << " NMI: " << int(P->GEN_NMI) << " I: " << I << " BRK: " << BRK << '\n';
         if (R) {
             RESET();
             R = false;
@@ -193,13 +185,13 @@ void CPU::RUN() {
         } else if (I && !BRK)
             IRQ_NMI(0xFFFE);
 
-        //LOG << std::hex << PROG_CNT << "  ";
+        //LOG << std::hex << "Cycle 1\n";
         CODE = FETCH(PROG_CNT++);
         WAIT();
 
         //Compose a string and append after EXEC
         LOG_STREAM.str(std::string());
-        LOG << std::hex << int(CODE) << " ";
+        //LOG << std::hex << int(CODE) << " ";
         LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
         LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
         LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
@@ -383,16 +375,17 @@ void CPU::RUN() {
         }
         //break;
         //At this point, all cycles of the instruction have been executed
-       
-        LOG << OPCODES[CODE] << '\t' << '\t';
+        //LOG << "Instr end\n";
+        //LOG << OPCODES[CODE] << '\t' << '\t';
         //CONTROL.get(B, 6);
         //CONTROL.getline(B, 6);
-        LOG << LOG_STREAM.str();
+        //LOG << LOG_STREAM.str();
 
        /* if (B != OPCODES[CODE]) {
             std::cout << "Instruction mismatch: " << B << " != " << OPCODES[CODE] << std::endl;
             break;
         }*/
+
     }
 }
 

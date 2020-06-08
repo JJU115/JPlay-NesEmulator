@@ -14,7 +14,7 @@ std::ofstream P_LOG;
 
 //Fetch function seems to exist solely for calling Cartridge functions, will keep for now but may get rid of later 
 uint8_t PPU::FETCH(uint16_t ADDR) {
-    //std::cout << "PPU read from " << std::hex << int(ADDR) << '\n';
+    //P_LOG << "PPU read from " << std::hex << int(ADDR) << '\n';
     if ((ADDR >= 0x3000) && (ADDR <= 0x3EFF))
         ADDR &= 0x2EFF;
 
@@ -36,13 +36,8 @@ uint8_t PPU::FETCH(uint16_t ADDR) {
     }
         
     //Palette RAM
-    if (ADDR <= 0x3F1F) {
-        if ((ADDR % 4) == 0)
-            return PALETTES[0];
-        else
-            return PALETTES[(ADDR & 0x00FF) - ((ADDR - 0x3F00)/4)];        
-    }
-
+    if (ADDR <= 0x3F1F)
+        return PALETTES[ADDR & 0xFF];       
 
     return 0;
 }
@@ -71,18 +66,21 @@ void PPU::WRITE(uint16_t ADDR, uint8_t DATA) {
 
     //Palette RAM
     if ((ADDR >= 0x3F00) && (ADDR <= 0x3F1F)) {
-        if ((ADDR % 4) == 0)
-            PALETTES[0] = DATA;
+        if (((ADDR % 4) == 0) && (ADDR < 0x3F10))
+            PALETTES[ADDR & 0xFF] = PALETTES[(ADDR & 0xFF) + 0x10] = DATA;
+        else if ((ADDR % 4) == 0)
+            PALETTES[ADDR & 0xFF] = PALETTES[(ADDR & 0xFF) - 0x10] = DATA;
         else
-            PALETTES[(ADDR & 0x00FF) - ((ADDR - 0x3F00)/4)] = DATA;
+            PALETTES[ADDR & 0xFF] = DATA;
+
+            
 
     }
-    //P_LOG << "After write: " << std::hex << int(FETCH(ADDR)) << '\n';
 }
 
-void PPU::CYCLE(uint16_t N) {
+inline void PPU::CYCLE(uint16_t N) {
     while (N-- > 0) {
-        std::this_thread::sleep_for(std::chrono::nanoseconds(186));
+        //std::this_thread::sleep_for(std::chrono::nanoseconds(186));
         TICK++;
     }
 
@@ -91,17 +89,15 @@ void PPU::CYCLE(uint16_t N) {
 
 
 void PPU::GENERATE_SIGNAL() {
-    framePixels = new uint32_t[256 * 240];
+    OAM_PRIMARY.assign(256, 0);
     clock_t t;
     VRAM.fill(0);
     uint16_t SLINE_NUM = 0;
-    NMI_OCC = 0;
-    NMI_OUT = 0;
-    GEN_NMI = 0;
+    PALETTES[0] = 0x3F;
     P_LOG.open("PPU_LOG.txt", std::ios::trunc | std::ios::out);
     while (true) {
         auto t1 = std::chrono::high_resolution_clock::now();
-
+        //std::cout << "Start frame\n";
         //For testing dktest.nes only
         /*if ((PPUMASK & 0x08) != 0) {
             VRAM_ADDR = 0;
@@ -113,16 +109,19 @@ void PPU::GENERATE_SIGNAL() {
         }*/
 
         //These two calls ensure the main thread is waiting on its condition variable before the PPU goes any further
-        SDL_LockMutex(mainThreadMutex);
-        SDL_UnlockMutex(mainThreadMutex);
-    
+        if (SDL_LockMutex(mainThreadMutex) != 0)
+            std::cout << "Lock failed\n";
+        if (SDL_UnlockMutex(mainThreadMutex) != 0)
+            std::cout << "Unlock failed\n";
+
+        //std::cout << "Lock/Unlock complete\n";
         PRE_RENDER();
 
         while (SLINE_NUM++ < 240) {
-            if ((PPUMASK & 0x08) != 0)
-                SCANLINE(SLINE_NUM);
+            
+            SCANLINE(SLINE_NUM);
         }
-
+        SDL_CondSignal(mainPPUCond);
         //std::cout << "Entering post render\n";
         CYCLE(341); //Post-render, don't think any of the below happens as it does in every other scanline but will keep commented here for now
         /*Y_INCREMENT();
@@ -158,8 +157,9 @@ void PPU::GENERATE_SIGNAL() {
         auto t2 = std::chrono::high_resolution_clock::now();
         //std::cout << "Frame time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << '\n';
         //Get main to render the frame
-        nametable(VRAM);
-        SDL_CondSignal(mainPPUCond);
+       // nametable(VRAM);
+        //SDL_CondSignal(mainPPUCond);
+        //std::cout << "Signal complete\n";
     }
 }
 
@@ -173,7 +173,7 @@ void PPU::PRE_RENDER() {
     uint8_t NTABLE_BYTE;
 
     CYCLE();
-    PPUSTATUS &= 0x7F;  //Signal end of Vblank
+    PPUSTATUS &= 0x5F;  //Signal end of Vblank and clear sprite overflow
 
     while (TICK < 321) {
         if ((TICK % 8 == 0) && (TICK < 256))
@@ -183,13 +183,16 @@ void PPU::PRE_RENDER() {
             Y_INCREMENT();
 
         if (TICK == 257) {
-            OAMADDR = 0;
             //Copy all horizontal bits from t to v at tick 257 if rendering enabled
             if ((PPUMASK & 0x08) || (PPUMASK & 0x10)) {
                 VRAM_ADDR &= 0xFBE0;
                 VRAM_ADDR |= (VRAM_TEMP & 0x041F);
             }
         }
+
+        //Although nesDev says OAMADDR is set to 0 during these ticks, enabling this causes tests to fail
+        //if ((TICK >= 257) && (TICK <= 320))
+           // OAMADDR = 0;
 
         if ((TICK >= 280) && (TICK <= 304)) {
             if ((PPUMASK & 0x08) || (PPUMASK & 0x10)) {
@@ -214,20 +217,35 @@ void PPU::PRE_RENDER() {
 }
 
 
-//Sprite evaluation for the next scanline occurs at the same time, will probably multithread 
-//For now only rendering the background so sprite eval doesn't need to happen
-//What is enabled or disabled if rendering is disabled? VRAM reg updates? Byte fetching?
-//May eliminate one attribute shift register
+//Sprite evaluation for the next scanline occurs at the same time
 void PPU::SCANLINE(uint16_t SLINE) {
     //auto t1 = std::chrono::high_resolution_clock::now();
     TICK = 0;
     uint8_t NTABLE_BYTE, PTABLE_LOW, PTABLE_HIGH, ATTR_BYTE;
-    uint16_t PIXEL;
+    uint8_t activeSprites = 0;
+    uint16_t BGPIXEL, SPPIXEL;
     uint32_t COL;
-    bool ZERO_HIT = false; //Placeholder for now, starting at cycle 2, check if opaque pixel of sprite 0 overlaps an opaque background pixel
+    bool spriteZeroRendered = false; //true if sprite zero of primary OAM is being rendered
+    bool spriteZeroHit = false; //true if zero hit has occurred
+    bool spriteZeroLoaded = false;
     bool targ = false;
+    bool spriteHasPriority = false;
+
+    //For sprite eval
+    uint8_t n = 0;
+    uint8_t m = 0;
+    uint8_t step = 1;
+    uint8_t data;
+    uint8_t offset = 1;
+    uint8_t foundSprites = 0;
+    auto In_range = [](uint8_t yPos, uint16_t slineNum, bool sprSize) {
+        int16_t diff = yPos - slineNum;
+        return (sprSize) ? ((diff <= 0) && (diff > -8)) : ((diff <= 0) && (diff > -16));
+    };
+
     //Cycle 0 is idle
     CYCLE();
+    OAM_SECONDARY.clear(); //2nd OAM technically initialized to 0xFF but here the vector is reduced to size zero
     if (targ)
         P_LOG << SLINE << ":  \n";
     //Cycles 1-256: Fetch tile data starting at tile 3 of current scanline (first two fetched from previous scanline)
@@ -278,23 +296,63 @@ void PPU::SCANLINE(uint16_t SLINE) {
             P_LOG << "1st shifter: " << std::hex << int(BGSHIFT_ONE) << '\n';
             P_LOG << "2nd shifter: " << std::hex << int(BGSHIFT_TWO) << '\n';
             P_LOG << "Attribute shift 1: " << std::hex << int(ATTRSHIFT_ONE) << '\n';
-            P_LOG << "TICK: " << int(TICK) << '\n';
         }
-        PIXEL = 0x3F00;
-        PIXEL |= ((BGSHIFT_ONE & 0x8000) != 0) ? 1 : 0;
-        PIXEL |= ((BGSHIFT_TWO & 0x8000) != 0) ? 0x02 : 0;
-        //Form the pixel color
-        if ((((SLINE-1)/16) % 2) == 0)
-            PIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x03) << 2) : (ATTRSHIFT_ONE & 0x0C);
-        else
-            PIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x30) >> 2) : ((ATTRSHIFT_ONE & 0xC0) >> 4);
+        BGPIXEL = 0x3F00;
+        //Background pixel composition
+        if (PPUMASK & 0x08) {
+            BGPIXEL |= (((BGSHIFT_ONE & 0x8000) >> 15) | ((BGSHIFT_TWO & 0x8000) >> 14));
+            //Form the pixel color
+            if ((((SLINE-1)/16) % 2) == 0)
+                BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x03) << 2) : (ATTRSHIFT_ONE & 0x0C);
+            else
+                BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x30) >> 2) : ((ATTRSHIFT_ONE & 0xC0) >> 4);
+        }
+        
+        SPPIXEL = 0x3F10;
+        //Sprite pixel composition
+        //Remember horizontal flipping here
+        if (PPUMASK & 0x10) {
+            for (uint8_t i=0; i<SPR_XPOS.size(); i++) {
+                //If sprite pattern is all zero, ignore it and move on
+                if (!SPR_PAT[i*2] && !SPR_PAT[i*2 + 1])
+                    continue;
 
-        if (targ) {
-            P_LOG << std::hex << int(((ATTRSHIFT_ONE & 0x30) >> 2)) << '\n';
-            P_LOG << "PIXEL: " << std::hex << PIXEL << '\n';
+                //If sprite x-pos is 0 and sprite isn't already active, actvate it
+                if ((SPR_XPOS[i] == 0) && !((activeSprites & 0x80) >> i))
+                    activeSprites |= (0x80 >> i);
+
+                //If sprite is active and non-transparent pixel has not already been found
+                if (((activeSprites & 0x80) >> i) && ((SPPIXEL & 0x03) == 0)) {
+                    SPPIXEL |= ((SPR_ATTRS[i] & 0x03) << 2) | ((SPR_PAT[i*2] & 0x80) >> 7) | ((SPR_PAT[i*2 + 1] & 0x80) >> 6);
+                    spriteZeroLoaded = (i == 0);
+                    spriteHasPriority = !(SPR_ATTRS[i] & 0x20);
+                }
+
+                //Decrement all x positions and shift active sprite pattern data
+                //Exhausted sprites aren't removed, just skipped
+                SPR_XPOS[i]--;
+                if ((activeSprites & 0x80) >> i) {
+                    SPR_PAT[i*2] <<= 1;
+                    SPR_PAT[i*2 + 1] <<= 1;
+                }
+            }
         }
+
+        //Check for sprite zero hit, only if all rendering enabled, the zero hit hasn't already happened, and sprite zero is being rendered
+        if ((PPUMASK & 0x08) && (PPUMASK & 0x10) && !spriteZeroHit && spriteZeroRendered)
+            spriteZeroHit = (spriteZeroLoaded && ((SPPIXEL & 0x03) != 0) && ((BGPIXEL & 0x03) != 0));
+
+        //Multiplex
+        if ((SPPIXEL & 0x03) && (BGPIXEL & 0x03))
+            COL = (spriteHasPriority) ? FETCH(SPPIXEL) : FETCH(BGPIXEL);
+        else if ((SPPIXEL & 0x03))
+            COL = FETCH(SPPIXEL);
+        else
+            COL = FETCH(BGPIXEL);
+
+
         //nesdev says there's a delay in rendering and the 1st pixel is output only at cycle 4?
-        COL = FETCH(PIXEL); 
+        COL = FETCH(BGPIXEL); 
 
         //Rather than call the render function each cycle, load a pixel into a texture each cycle then blit the full texture after the rendering cycles are done
         framePixels[(SLINE * 256) + TICK - 1] = ((SYSTEM_PAL[COL].R << 24) | (SYSTEM_PAL[COL].G << 16) | (SYSTEM_PAL[COL].B << 8) | 0xFF);
@@ -306,10 +364,63 @@ void PPU::SCANLINE(uint16_t SLINE) {
         //Nesdev says shifters only shift starting at cycle 2? Does it even make a difference?
         BGSHIFT_ONE <<= 1;
         BGSHIFT_TWO <<= 1;
-        //ATTRSHIFT_ONE <<= 1; - Why shift this at all?
+        
+
+        //Sprite eval - happens if either background or sprite rendering is enabled
+        n = (TICK == 65) ? OAMADDR : n;
+        if (TICK >= 65) {
+            switch (step) {
+                case 1: //Reads OAM y-cord and determines if in range
+                    if ((TICK % 2) == 1)
+                        data = OAM_PRIMARY[n]; //possible to go out of bounds?
+                    else if (foundSprites < 8) {
+                        OAM_SECONDARY.emplace_back(data);
+                        foundSprites++;
+                        step = (In_range(data, SLINE+1, PPUCTRL & 0x20)) ? 2 : 3;
+                    }
+                    break;
+                case 2: //Copies next 3 bytes if y-cord in range
+                    if ((TICK % 2) == 1) {
+                        if (offset == 4) { //All bytes copied
+                            offset = 0;
+                            step = 3;
+                            spriteZeroRendered = (n == 0) ? true : spriteZeroRendered;
+                            break;
+                        } else
+                            data = OAM_PRIMARY[n + offset++];
+                    } else
+                        OAM_SECONDARY.emplace_back(data);                                      
+                    break;
+                case 3: //Increments n and sets step for next operation(s)
+                    if ((n + 4) < n) {
+                        step = 5;
+                        break;
+                    } else if (foundSprites < 8)
+                        step = 1;
+                    else
+                        step = 4;
+                    n += 4;
+                    break;
+                case 4: //Evaluating OAM contents
+                    if (In_range(OAM_PRIMARY[n], SLINE+1, PPUCTRL & 0x20)) {
+                        PPUSTATUS |= 0x20;
+                        n += 4;
+                    } else {
+                        if ((n + 5) < n) {
+                            step = 5;
+                            break;
+                        }
+                        n += 5;
+                    }
+                    break;
+                case 5: //Sprite eval effectively finished, no further operations needed
+                    break;
+            }
+        }
 
         CYCLE();
     }
+
 
     //Copy all horizontal bits from t to v at tick 257 if rendering enabled
     if ((PPUMASK & 0x08) || (PPUMASK & 0x10)) {
@@ -318,34 +429,56 @@ void PPU::SCANLINE(uint16_t SLINE) {
     }
     //P_LOG << '\n';
 
-    //Cycles 257-320 - Fetch tile data for sprites on next scanline
-    Sprite CUR;
+    //Cycles 257-320 - Fetch tile data for sprites on next scanline - OAMADDR register determines which is sprite 0
+    SPR_ATTRS.clear();
+    SPR_XPOS.clear();
+    SPR_PAT.clear();
     uint16_t SPR_PAT_ADDR;
     for(int i=0; i < 8; i++) {
-        OAMADDR = 0;
-        if (OAM_SECONDARY.size() <= i) {
+        //OAMADDR = 0; //Enabling causes failure despite nesdev saying it should happen
+        if (OAM_SECONDARY.size() < (i+1)*4) {
             CYCLE(8);
         } else {
-            CUR = OAM_SECONDARY[i]; //Remember, lower index in 2nd OAM means sprite has a higher priority
             CYCLE(2);
-            SPR_ATTRS.push_back(CUR.ATTR);
+            SPR_ATTRS.push_back(OAM_SECONDARY[i*4 + 2]);
             CYCLE();
-            SPR_XPOS.push_back(CUR.X_POS);
+            SPR_XPOS.push_back(OAM_SECONDARY[i*4 + 3]);
             CYCLE();
 
             //Pattern table data access different for 8*8 vs 8*16 sprites, see PPUCTRL
-            if ((PPUCTRL & 0x20) == 0) {
-                SPR_PAT_ADDR = (((PPUCTRL & 0x08) << 9) | ((CUR.IND/32) << 8) | ((CUR.IND % 32) << 4) | ((VRAM_ADDR & 0x7000) >> 12));
+            //Also vertical flipping must be handled here, 8*16 sprites are flipped completely so last byte of bottom tile is fetched!
+            if ((PPUCTRL & 0x20) == 0) { //8*8 sprites
+                SPR_PAT_ADDR = (((PPUCTRL & 0x08) << 9) | ((OAM_SECONDARY[i*4 + 1]*16) << 4));
+                //Vertically flipped or not?
+                SPR_PAT_ADDR |= (SPR_ATTRS.back() & 0x80) ? (7 - ((VRAM_ADDR & 0x7000) >> 12)) : ((VRAM_ADDR & 0x7000) >> 12); 
+
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 CYCLE(2);
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
                 CYCLE(2);
-            } else {
-                SPR_PAT_ADDR = (((CUR.IND % 2) << 12) | ((CUR.IND - (CUR.IND % 2)) << 4) | ((VRAM_ADDR & 0x7000) >> 12));
-                FETCH(SPR_PAT_ADDR);
+            } else { //8*16 sprites
+                SPR_PAT_ADDR = (((OAM_SECONDARY[i*4 + 1] & 0x01) << 12) | (((OAM_SECONDARY[i*4 + 1] & 0xFE) >> 1) * 16));
+                SPR_PAT_ADDR |= (SPR_ATTRS.back() & 0x80) ? (23 - ((VRAM_ADDR & 0x7000) >> 12)) : ((VRAM_ADDR & 0x7000) >> 12);
+                    
+                SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 CYCLE(2);
-                FETCH(SPR_PAT_ADDR + 8);
+                SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
                 CYCLE(2);
+            }
+
+            //Handle horizontal flipping here
+            if (SPR_ATTRS.back() & 0x40) {
+                auto flip_byte = [](uint8_t A) {
+                    uint8_t B = 0;
+                    for (uint8_t i=0; i<8; i++) {
+                        B |= (A & 0x01);
+                        B <<= 1;
+                        A >>= 1;
+                    }
+                    return B;
+                };
+
+                SPR_PAT.back() = flip_byte(SPR_PAT.back());
             }
 
         }
@@ -397,7 +530,6 @@ void PPU::X_INCREMENT() {
 }
 
 
-//How does ppuctrl base nametable address play into fetching ntable bytes?
 //If rendering is disabled, how does this act differently?
 void PPU::PRE_SLINE_TILE_FETCH() {
 
@@ -454,26 +586,12 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG) {
             break;
         case 3:
             OAMADDR = DATA;
+            P_LOG << "OAMADDR set to " << std::hex << int(OAMADDR) << '\n';
             break;
         case 4:
-            if ((PPUSTATUS & 0x80) == 0) {
-                OAMDATA = DATA;
-                switch (OAMADDR%4) {
-                    case 0:
-                        OAM_PRIMARY[OAMADDR/4].Y_POS = DATA;
-                        break;
-                    case 1:
-                        OAM_PRIMARY[OAMADDR/4].IND = DATA;
-                        break;
-                    case 2:
-                        OAM_PRIMARY[OAMADDR/4].ATTR = DATA;
-                        break;
-                    case 3:
-                        OAM_PRIMARY[OAMADDR/4].X_POS = DATA;
-                        break;  
-                }
-                OAMADDR++;
-            }
+            OAMDATA = DATA;
+            OAM_PRIMARY[OAMADDR++] = DATA;
+            P_LOG << "Wrote " << std::hex << int(DATA) << " OAMADDR: " << std::hex << int(OAMADDR-1) << '\n';
             break;
         case 5:
             if (WRITE_TOGGLE) {
@@ -525,17 +643,9 @@ uint8_t PPU::REG_READ(uint8_t REG) {
             return TEMP; }
         case 3:
             break;
-        case 4:
-            switch (OAMADDR%4) {
-                case 0:
-                    return OAM_PRIMARY[OAMADDR/4].Y_POS;
-                case 1:
-                    return OAM_PRIMARY[OAMADDR/4].IND;
-                case 2:
-                    return OAM_PRIMARY[OAMADDR/4].ATTR;
-                case 3:
-                    return OAM_PRIMARY[OAMADDR/4].X_POS;  
-            }
+        case 4: //Attempting to read 0x2004 before cycle 65 on visible scanlines returns 0xFF
+            P_LOG << "Read from " << std::hex << int(OAMADDR) << " Get: " << std::hex << int(OAM_PRIMARY[OAMADDR]) << '\n';
+            return OAM_PRIMARY[OAMADDR];
         case 5:
             break;
         case 6:
@@ -552,8 +662,9 @@ uint8_t PPU::REG_READ(uint8_t REG) {
 
 
 //Sprite eval does not happen on pre-render line, only on visible scanlines: 0-239
-//Since there's no visible scanlines after 239, sprite eval doesn't strictly need to happen
+//Perhaps call this function after the first 256 cycles of each scanline and have it run without allocating a new thread of execution
 //OAMADDR effectively selects sprite 0, see nesdev wiki
+/*
 void PPU::SPRITE_EVAL(uint16_t SLINE_NUM) {
 
     OAM_SECONDARY.clear();
@@ -608,7 +719,7 @@ void PPU::SPRITE_EVAL(uint16_t SLINE_NUM) {
     //Wait until cycle 256
 
 
-}
+}*/
 
 
 void PPU::nametable(std::array<uint8_t, 2048> N) {

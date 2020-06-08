@@ -45,7 +45,8 @@ class PPU {
         void REG_WRITE(uint8_t DATA, uint8_t REG);
         uint8_t REG_READ(uint8_t REG);
         PPU(Cartridge& NES): PPUCTRL(0), PPUMASK(0), PPUSTATUS(0), OAMADDR(0), OAMDATA(0), PPUSCROLL(0), PPUADDR(0), PPUDATA(0), OAMDMA(0),
-        VRAM_ADDR(0), VRAM_TEMP(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false), WRITE_TOGGLE(false), ROM(&NES) { }
+        VRAM_ADDR(0), VRAM_TEMP(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false), WRITE_TOGGLE(false),
+        GEN_NMI(0), NMI_OCC(0), NMI_OUT(0), ROM(&NES) { framePixels = new uint32_t[256 * 240]; }
     private:
         void PRE_RENDER();
         void SCANLINE(uint16_t SLINE);
@@ -53,7 +54,7 @@ class PPU {
         void Y_INCREMENT();
         void X_INCREMENT();
         void PRE_SLINE_TILE_FETCH();
-        void SPRITE_EVAL(uint16_t SLINE_NUM);
+        //void SPRITE_EVAL(uint16_t SLINE_NUM);
         uint8_t FETCH(uint16_t ADDR);
         void WRITE(uint16_t ADDR, uint8_t DATA);
         void nametable(std::array<uint8_t, 2048> N);
@@ -75,9 +76,9 @@ class PPU {
 
         //Set the initial size of the OAMs?
         std::array<uint8_t, 2048> VRAM; //May need less based on cartridge configuration
-        std::vector<Sprite> OAM_PRIMARY;
-        std::vector<Sprite> OAM_SECONDARY;
-        std::array<uint8_t, 25> PALETTES;
+        std::vector<uint8_t> OAM_PRIMARY;
+        std::vector<uint8_t> OAM_SECONDARY;
+        std::array<uint8_t, 32> PALETTES;
 
         uint16_t VRAM_ADDR;
         uint16_t VRAM_TEMP;

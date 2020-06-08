@@ -54,17 +54,17 @@ int main(int argc, char *argv[]) {
         Screen.RENDER_FRAME(RICOH_2C02.framePixels);
          
         //Check for events
-        if (SDL_PollEvent(&evt) != 0) {
+        if(SDL_PollEvent(&evt)) {
             if (evt.type == SDL_QUIT)
                 quit = true;
         }
         
         //Wait if needed
         frameEnd = std::chrono::high_resolution_clock::now();
-        elapsedTime = std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameStart).count();
-        std::cout << "FPS: " << (1000000/elapsedTime) << '\n';
+        elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
+        std::cout << "FPS: " << (1000/elapsedTime) << '\n';
         if (elapsedTime < 16)
-            std::this_thread::sleep_for(std::chrono::microseconds(16 - elapsedTime));
+            std::this_thread::sleep_for(std::chrono::milliseconds(16 - elapsedTime));
     }
 
     return 0;

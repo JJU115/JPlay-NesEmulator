@@ -11,6 +11,8 @@ std::mutex CPU_MTX;
 std::condition_variable CPU_COND;
 std::unique_lock<std::mutex> CPU_LCK(CPU_MTX);
 
+extern bool pause;
+
 uint8_t VAL, TEMP, LOW, HIGH, POINT;
 uint16_t WBACK_ADDR;
 std::ofstream LOG;
@@ -32,7 +34,7 @@ unsigned char CPU::STACK_POP() {
 }
 
 
-//May not have CPU access PPU regs directly, instead CPU will call PPU function which reads for the CPU
+//Fetch is called a lot by the CPU, needs to be as efficient as possible
 uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
     //LOG << "CPU read of " << std::hex << int(ADDR) << '\n';
     //Every 0x0800 bytes of 0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
@@ -64,7 +66,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
     return 0;
 }
 
-//Like with fetch, may not have CPU directly access PPU regs
+
 void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
     //LOG << "CPU write of " << int(VAL) << " to " << std::hex << int(ADDR) << '\n';
     if (ADDR < 0x2000) {
@@ -95,11 +97,18 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
     
 }
 
-
-inline void CPU::WAIT() {
+//CPU seems to lag behind PPU thread which may be due to all the successive separate calls to WAIT
+//For the EXEC function at least, have the proper number of cycles be waited out at the end of the function
+void CPU::WAIT(uint8_t N) {
+    while (pause)
+        std::this_thread::yield();
     //Wait on condition var, will be signaled by the PPU every time it goes through 3 ticks
     //CPU_COND.wait(CPU_LCK);
-    //std::this_thread::sleep_for(std::chrono::nanoseconds(558))
+    //std::this_thread::sleep_for(std::chrono::nanoseconds(558));
+    while (P->cycleCount < 3)
+        std::this_thread::yield();
+
+    P->cycleCount -= 3;
     if (CTRL_IGNORE < 30000)
         CTRL_IGNORE++;
 }
@@ -155,6 +164,7 @@ void CPU::IRQ_NMI(uint16_t V) {
 void CPU::RUN() {
     RAM.fill(0); //Clear RAM
     CTRL_IGNORE = 0;
+    bool unofficial = false;
     
     //Enable logging
     LOG.open("CPU_LOG.txt", std::ios::trunc | std::ios::out);
@@ -182,10 +192,9 @@ void CPU::RUN() {
         } else if (P->GEN_NMI) {
             P->GEN_NMI = 0;
             IRQ_NMI(0xFFFA);
-        } else if (I && !BRK)
+        } else if (I && !BRK && !(STAT & 0x04))
             IRQ_NMI(0xFFFE);
 
-        //LOG << std::hex << "Cycle 1\n";
         CODE = FETCH(PROG_CNT++);
         WAIT();
 
@@ -212,7 +221,7 @@ void CPU::RUN() {
                 WAIT();
 
                 STAT |= 0x10;
-                STACK_PUSH(STAT);
+                STACK_PUSH(STAT | 0x30);
                 WAIT();
 
                 PROG_CNT &= 0;
@@ -268,7 +277,7 @@ void CPU::RUN() {
             case 0x08:
                 WAIT();
 
-                STACK_PUSH(STAT);
+                STACK_PUSH(STAT | 0x30);
                 WAIT();
                 break;
             //PLA
@@ -371,9 +380,15 @@ void CPU::RUN() {
                         else
                             EXEC(CODE, 6);
                         break;
+                    default:
+                        unofficial = true;
+                        break;
                 }
         }
-        //break;
+        if (unofficial) {
+            std::cout << "Unofficial opcode\n";
+            break;
+        }
         //At this point, all cycles of the instruction have been executed
         //LOG << "Instr end\n";
         //LOG << OPCODES[CODE] << '\t' << '\t';
@@ -405,6 +420,7 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
     bool W_BACK = false;
     uint8_t *REG_P = nullptr;
     
+    //Create an enum for ADDR_TYPE instead of having random numbers
     switch (ADDR_TYPE) {
         //Immediate
         case 0:

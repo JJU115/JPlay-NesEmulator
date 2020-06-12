@@ -8,9 +8,11 @@
 extern SDL_cond* mainPPUCond;
 extern SDL_mutex* mainThreadMutex;
 extern std::condition_variable CPU_COND;
+extern bool pause;
 
 uint16_t TICK;
 std::ofstream P_LOG;
+
 
 //Fetch function seems to exist solely for calling Cartridge functions, will keep for now but may get rid of later 
 uint8_t PPU::FETCH(uint16_t ADDR) {
@@ -78,11 +80,19 @@ void PPU::WRITE(uint16_t ADDR, uint8_t DATA) {
     }
 }
 
-inline void PPU::CYCLE(uint16_t N) {
+//Try putting in a yield statement here if cycleCount is above 3 or some other higher value
+void PPU::CYCLE(uint16_t N) {
+    while(pause)
+        std::this_thread::yield();
+
     while (N-- > 0) {
         //std::this_thread::sleep_for(std::chrono::nanoseconds(186));
         TICK++;
+        cycleCount++;
     }
+    //Temporary for now to resolve background render timing issues
+    while (cycleCount > 6)
+        std::this_thread::yield();
 
     //P_LOG << "PPU Tick\n";
 }
@@ -90,6 +100,7 @@ inline void PPU::CYCLE(uint16_t N) {
 
 void PPU::GENERATE_SIGNAL() {
     OAM_PRIMARY.assign(256, 0);
+    cycleCount = 0;
     clock_t t;
     VRAM.fill(0);
     uint16_t SLINE_NUM = 0;
@@ -159,7 +170,9 @@ void PPU::GENERATE_SIGNAL() {
         //Get main to render the frame
        // nametable(VRAM);
         //SDL_CondSignal(mainPPUCond);
-        //std::cout << "Signal complete\n";
+        /*for (uint8_t i : OAM_PRIMARY)
+            P_LOG << int(i) << " ";
+        P_LOG << "\n\n";*/
     }
 }
 
@@ -191,8 +204,8 @@ void PPU::PRE_RENDER() {
         }
 
         //Although nesDev says OAMADDR is set to 0 during these ticks, enabling this causes tests to fail
-        //if ((TICK >= 257) && (TICK <= 320))
-           // OAMADDR = 0;
+        if ((TICK >= 257) && (TICK <= 320))
+            OAMADDR = 0;
 
         if ((TICK >= 280) && (TICK <= 304)) {
             if ((PPUMASK & 0x08) || (PPUMASK & 0x10)) {
@@ -240,7 +253,12 @@ void PPU::SCANLINE(uint16_t SLINE) {
     uint8_t foundSprites = 0;
     auto In_range = [](uint8_t yPos, uint16_t slineNum, bool sprSize) {
         int16_t diff = yPos - slineNum;
-        return (sprSize) ? ((diff <= 0) && (diff > -8)) : ((diff <= 0) && (diff > -16));
+        return (sprSize) ? ((diff <= 0) && (diff > -16)) : ((diff <= 0) && (diff > -8));
+    };
+
+    auto IncN = [&]() {
+        step = ((n + 1) > 63) ? 5 : (foundSprites < 8) ? 1 : 4;
+        n++;
     };
 
     //Cycle 0 is idle
@@ -307,10 +325,22 @@ void PPU::SCANLINE(uint16_t SLINE) {
             else
                 BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x30) >> 2) : ((ATTRSHIFT_ONE & 0xC0) >> 4);
         }
+
+       /* if ((SLINE >= 127) && (SLINE <= 135)) {
+            P_LOG << "Sline: " << int(SLINE) << "\nPattern data: ";
+            for (int i : SPR_PAT)
+                P_LOG << i << " ";
+            P_LOG << "\n\n";
+
+            P_LOG << "Attribute data: ";
+            for (int i : SPR_ATTRS)
+                P_LOG << i << " ";
+            P_LOG << "\n\n";
+        }*/
+
         
         SPPIXEL = 0x3F10;
         //Sprite pixel composition
-        //Remember horizontal flipping here
         if (PPUMASK & 0x10) {
             for (uint8_t i=0; i<SPR_XPOS.size(); i++) {
                 //If sprite pattern is all zero, ignore it and move on
@@ -352,7 +382,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
 
         //nesdev says there's a delay in rendering and the 1st pixel is output only at cycle 4?
-        COL = FETCH(BGPIXEL); 
+        //COL = FETCH(BGPIXEL); 
 
         //Rather than call the render function each cycle, load a pixel into a texture each cycle then blit the full texture after the rendering cycles are done
         framePixels[(SLINE * 256) + TICK - 1] = ((SYSTEM_PAL[COL].R << 24) | (SYSTEM_PAL[COL].G << 16) | (SYSTEM_PAL[COL].B << 8) | 0xFF);
@@ -367,50 +397,46 @@ void PPU::SCANLINE(uint16_t SLINE) {
         
 
         //Sprite eval - happens if either background or sprite rendering is enabled
-        n = (TICK == 65) ? OAMADDR : n;
-        if (TICK >= 65) {
+        //n = (TICK == 65) ? OAMADDR : n; -- Need to figure out how to get OAM[OAMADDR] to get treated as sprite 0 
+         if (TICK >= 65 && ((PPUMASK & 0x10) || (PPUMASK & 0x08))) {
             switch (step) {
                 case 1: //Reads OAM y-cord and determines if in range
                     if ((TICK % 2) == 1)
-                        data = OAM_PRIMARY[n]; //possible to go out of bounds?
+                        data = OAM_PRIMARY[n*4]; //possible to go out of bounds?
                     else if (foundSprites < 8) {
-                        OAM_SECONDARY.emplace_back(data);
-                        foundSprites++;
-                        step = (In_range(data, SLINE+1, PPUCTRL & 0x20)) ? 2 : 3;
+                        if (OAM_SECONDARY.size() < 32)
+                            OAM_SECONDARY.emplace_back(data);
+                        if (In_range(data, SLINE+1, PPUCTRL & 0x20))
+                            step = 2;
+                        else
+                            IncN();
                     }
                     break;
                 case 2: //Copies next 3 bytes if y-cord in range
                     if ((TICK % 2) == 1) {
+                        data = OAM_PRIMARY[n*4 + offset++];
+                    } else if (OAM_SECONDARY.size() < 32) {
+                        OAM_SECONDARY.emplace_back(data);
                         if (offset == 4) { //All bytes copied
-                            offset = 0;
-                            step = 3;
+                            offset = 1;
                             spriteZeroRendered = (n == 0) ? true : spriteZeroRendered;
+                            IncN();
+                            foundSprites++;
                             break;
-                        } else
-                            data = OAM_PRIMARY[n + offset++];
-                    } else
-                        OAM_SECONDARY.emplace_back(data);                                      
-                    break;
-                case 3: //Increments n and sets step for next operation(s)
-                    if ((n + 4) < n) {
-                        step = 5;
-                        break;
-                    } else if (foundSprites < 8)
-                        step = 1;
-                    else
-                        step = 4;
-                    n += 4;
+                        }     
+                    }                                 
                     break;
                 case 4: //Evaluating OAM contents
-                    if (In_range(OAM_PRIMARY[n], SLINE+1, PPUCTRL & 0x20)) {
+                    if (In_range(OAM_PRIMARY[n*4 + m], SLINE+1, PPUCTRL & 0x20)) {
                         PPUSTATUS |= 0x20;
-                        n += 4;
+                        step = 5; //Supposed to increment n and m but they're not accessed again during this scanline
                     } else {
-                        if ((n + 5) < n) {
+                        if ((n + 1) > 63)
                             step = 5;
-                            break;
+                        else {
+                            n++;
+                            m = (m + 1) % 4;
                         }
-                        n += 5;
                     }
                     break;
                 case 5: //Sprite eval effectively finished, no further operations needed
@@ -418,7 +444,14 @@ void PPU::SCANLINE(uint16_t SLINE) {
             }
         }
 
+
         CYCLE();
+        /*if ((SLINE >= 127) && (SLINE <= 135)) {
+            P_LOG << "2nd OAM: ";
+            for (int i : OAM_SECONDARY)
+                P_LOG << i << " ";
+            P_LOG << "\n\n";
+        }*/
     }
 
 
@@ -428,15 +461,16 @@ void PPU::SCANLINE(uint16_t SLINE) {
         VRAM_ADDR |= (VRAM_TEMP & 0x041F);
     }
     //P_LOG << '\n';
-
+    if ((SLINE >= 127) && (SLINE <= 135))
+        P_LOG << "Found " << int(foundSprites) << " sprites\n\n";
     //Cycles 257-320 - Fetch tile data for sprites on next scanline - OAMADDR register determines which is sprite 0
     SPR_ATTRS.clear();
     SPR_XPOS.clear();
     SPR_PAT.clear();
     uint16_t SPR_PAT_ADDR;
     for(int i=0; i < 8; i++) {
-        //OAMADDR = 0; //Enabling causes failure despite nesdev saying it should happen
-        if (OAM_SECONDARY.size() < (i+1)*4) {
+        OAMADDR = 0; //Enabling causes failure despite nesdev saying it should happen
+        if ((OAM_SECONDARY.size() < (i+1)*4) || (foundSprites == 0)) {
             CYCLE(8);
         } else {
             CYCLE(2);
@@ -448,17 +482,19 @@ void PPU::SCANLINE(uint16_t SLINE) {
             //Pattern table data access different for 8*8 vs 8*16 sprites, see PPUCTRL
             //Also vertical flipping must be handled here, 8*16 sprites are flipped completely so last byte of bottom tile is fetched!
             if ((PPUCTRL & 0x20) == 0) { //8*8 sprites
-                SPR_PAT_ADDR = (((PPUCTRL & 0x08) << 9) | ((OAM_SECONDARY[i*4 + 1]*16) << 4));
+                SPR_PAT_ADDR = (((PPUCTRL & 0x08) << 9) | (OAM_SECONDARY[i*4 + 1]*16));
                 //Vertically flipped or not?
-                SPR_PAT_ADDR |= (SPR_ATTRS.back() & 0x80) ? (7 - ((VRAM_ADDR & 0x7000) >> 12)) : ((VRAM_ADDR & 0x7000) >> 12); 
-
+                SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (8 - SLINE - OAM_SECONDARY[i*4]) : (SLINE + 1 - OAM_SECONDARY[i*4]); 
+                /*if ((SLINE >= 127) && (SLINE <= 135))
+                    P_LOG << "Sprite pattern addr: " << std::hex << int(SPR_PAT_ADDR) << "\n\n";
+                */
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 CYCLE(2);
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
                 CYCLE(2);
             } else { //8*16 sprites
                 SPR_PAT_ADDR = (((OAM_SECONDARY[i*4 + 1] & 0x01) << 12) | (((OAM_SECONDARY[i*4 + 1] & 0xFE) >> 1) * 16));
-                SPR_PAT_ADDR |= (SPR_ATTRS.back() & 0x80) ? (23 - ((VRAM_ADDR & 0x7000) >> 12)) : ((VRAM_ADDR & 0x7000) >> 12);
+                SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (23 - ((VRAM_ADDR & 0x7000) >> 12)) : ((VRAM_ADDR & 0x7000) >> 12);
                     
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 CYCLE(2);
@@ -480,10 +516,26 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
                 SPR_PAT.back() = flip_byte(SPR_PAT.back());
             }
-
+            foundSprites--;
         }
-
+        
     }
+
+    /*if ((SLINE >= 127) && (SLINE <= 135)) {
+        P_LOG << "2nd OAM: ";
+        for (int i : OAM_SECONDARY)
+            P_LOG << i << " ";
+        P_LOG << "\n\n";
+
+        for (int i : SPR_PAT)
+                P_LOG << i << " ";
+            P_LOG << "\n\n";
+
+            P_LOG << "Attribute data: ";
+            for (int i : SPR_ATTRS)
+                P_LOG << i << " ";
+            P_LOG << "\n\n";
+    }*/
 
     //Cycle 321-336
     PRE_SLINE_TILE_FETCH();
@@ -586,12 +638,12 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG) {
             break;
         case 3:
             OAMADDR = DATA;
-            P_LOG << "OAMADDR set to " << std::hex << int(OAMADDR) << '\n';
+            //P_LOG << "OAMADDR set to " << std::hex << int(OAMADDR) << '\n';
             break;
         case 4:
             OAMDATA = DATA;
             OAM_PRIMARY[OAMADDR++] = DATA;
-            P_LOG << "Wrote " << std::hex << int(DATA) << " OAMADDR: " << std::hex << int(OAMADDR-1) << '\n';
+            //P_LOG << "Wrote " << std::hex << int(DATA) << " OAMADDR: " << std::hex << int(OAMADDR-1) << '\n';
             break;
         case 5:
             if (WRITE_TOGGLE) {

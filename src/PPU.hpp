@@ -41,6 +41,7 @@ class PPU {
     friend class CPU;
     public:
         uint32_t* framePixels;
+        long cycleCount;
         void GENERATE_SIGNAL();
         void REG_WRITE(uint8_t DATA, uint8_t REG);
         uint8_t REG_READ(uint8_t REG);

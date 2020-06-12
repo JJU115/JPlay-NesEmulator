@@ -5,8 +5,7 @@
 #include <time.h>
 #include <thread>
 
-std::ofstream NLOG;
-
+bool pause;
 SDL_cond* mainPPUCond;
 SDL_mutex* mainThreadMutex;
 
@@ -20,6 +19,7 @@ int main(int argc, char *argv[]) {
     Display Screen;
     SDL_Event evt;
     bool quit = false;
+    pause = false;
 
     SDL_Thread* PPU_Thread;
     SDL_Thread* CPU_Thread;
@@ -57,6 +57,23 @@ int main(int argc, char *argv[]) {
         if(SDL_PollEvent(&evt)) {
             if (evt.type == SDL_QUIT)
                 quit = true;
+            else if (evt.type == SDL_KEYDOWN) {
+                switch (evt.key.keysym.sym) {
+                    case SDLK_p:
+                        pause = true;
+                        break;
+                }
+
+                while (pause) {
+                    if(SDL_PollEvent(&evt)) {
+                        if (evt.type == SDL_KEYDOWN) {
+                            if (evt.key.keysym.sym == SDLK_p)
+                                pause = false;
+                        }
+                    }
+                    SDL_Delay(500);
+                }
+            }
         }
         
         //Wait if needed
@@ -65,6 +82,7 @@ int main(int argc, char *argv[]) {
         std::cout << "FPS: " << (1000/elapsedTime) << '\n';
         if (elapsedTime < 16)
             std::this_thread::sleep_for(std::chrono::milliseconds(16 - elapsedTime));
+        //std::cout << RICOH_2C02.cycleCount << '\n';
     }
 
     return 0;

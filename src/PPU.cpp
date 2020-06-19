@@ -9,6 +9,7 @@ extern SDL_cond* mainPPUCond;
 extern SDL_mutex* mainThreadMutex;
 extern std::condition_variable CPU_COND;
 extern bool pause;
+extern bool log;
 
 uint16_t TICK;
 std::ofstream P_LOG;
@@ -91,7 +92,7 @@ void PPU::CYCLE(uint16_t N) {
         cycleCount++;
     }
     //Temporary for now to resolve background render timing issues
-    while (cycleCount > 6)
+    while (cycleCount > 9)
         std::this_thread::yield();
 
     //P_LOG << "PPU Tick\n";
@@ -100,12 +101,13 @@ void PPU::CYCLE(uint16_t N) {
 
 void PPU::GENERATE_SIGNAL() {
     OAM_PRIMARY.assign(256, 0);
+    OAM_SECONDARY.assign(32, 255); //Problem here?
     cycleCount = 0;
     clock_t t;
     VRAM.fill(0);
     uint16_t SLINE_NUM = 0;
-    PALETTES[0] = 0x3F;
     P_LOG.open("PPU_LOG.txt", std::ios::trunc | std::ios::out);
+
     while (true) {
         auto t1 = std::chrono::high_resolution_clock::now();
         //std::cout << "Start frame\n";
@@ -128,9 +130,9 @@ void PPU::GENERATE_SIGNAL() {
         //std::cout << "Lock/Unlock complete\n";
         PRE_RENDER();
 
-        while (SLINE_NUM++ < 240) {
+        while (SLINE_NUM < 240) {
             
-            SCANLINE(SLINE_NUM);
+            SCANLINE(SLINE_NUM++);
         }
         SDL_CondSignal(mainPPUCond);
         //std::cout << "Entering post render\n";
@@ -232,7 +234,15 @@ void PPU::PRE_RENDER() {
 
 //Sprite evaluation for the next scanline occurs at the same time
 void PPU::SCANLINE(uint16_t SLINE) {
-    //auto t1 = std::chrono::high_resolution_clock::now();
+    
+    /*if (SLINE == 1 && (PPUMASK & 0x10)) {
+        P_LOG << "OAM: ";
+        for (int i : OAM_PRIMARY)
+            P_LOG << std::hex << i << " ";
+        P_LOG << "\n\n";
+    }*/
+
+    OAM_SECONDARY.assign(32, 255);
     TICK = 0;
     uint8_t NTABLE_BYTE, PTABLE_LOW, PTABLE_HIGH, ATTR_BYTE;
     uint8_t activeSprites = 0;
@@ -261,9 +271,10 @@ void PPU::SCANLINE(uint16_t SLINE) {
         n++;
     };
 
+
     //Cycle 0 is idle
     CYCLE();
-    OAM_SECONDARY.clear(); //2nd OAM technically initialized to 0xFF but here the vector is reduced to size zero
+    
     if (targ)
         P_LOG << SLINE << ":  \n";
     //Cycles 1-256: Fetch tile data starting at tile 3 of current scanline (first two fetched from previous scanline)
@@ -310,11 +321,18 @@ void PPU::SCANLINE(uint16_t SLINE) {
             default:
                 break;
         }
-        if (targ) {
-            P_LOG << "1st shifter: " << std::hex << int(BGSHIFT_ONE) << '\n';
-            P_LOG << "2nd shifter: " << std::hex << int(BGSHIFT_TWO) << '\n';
-            P_LOG << "Attribute shift 1: " << std::hex << int(ATTRSHIFT_ONE) << '\n';
+        if (SLINE >= 0x18 && SLINE <=0x1F && log) {
+            P_LOG << "Sline: " << SLINE << '\n';
+            P_LOG << "X-Positions: ";
+            for (int i : SPR_XPOS)
+                P_LOG << i << " ";
+            P_LOG << '\n';
+            P_LOG << "Pattern data: ";
+            for (int i : SPR_PAT)
+                P_LOG << i << " ";
+            P_LOG << "\n\n";
         }
+
         BGPIXEL = 0x3F00;
         //Background pixel composition
         if (PPUMASK & 0x08) {
@@ -326,33 +344,22 @@ void PPU::SCANLINE(uint16_t SLINE) {
                 BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x30) >> 2) : ((ATTRSHIFT_ONE & 0xC0) >> 4);
         }
 
-       /* if ((SLINE >= 127) && (SLINE <= 135)) {
-            P_LOG << "Sline: " << int(SLINE) << "\nPattern data: ";
-            for (int i : SPR_PAT)
-                P_LOG << i << " ";
-            P_LOG << "\n\n";
-
-            P_LOG << "Attribute data: ";
-            for (int i : SPR_ATTRS)
-                P_LOG << i << " ";
-            P_LOG << "\n\n";
-        }*/
 
         
         SPPIXEL = 0x3F10;
         //Sprite pixel composition
-        if (PPUMASK & 0x10) {
+        if ((PPUMASK & 0x10) && (SLINE != 0)) {
             for (uint8_t i=0; i<SPR_XPOS.size(); i++) {
                 //If sprite pattern is all zero, ignore it and move on
                 if (!SPR_PAT[i*2] && !SPR_PAT[i*2 + 1])
                     continue;
 
                 //If sprite x-pos is 0 and sprite isn't already active, actvate it
-                if ((SPR_XPOS[i] == 0) && !((activeSprites & 0x80) >> i))
+                if ((SPR_XPOS[i] == 0) && !(activeSprites & (0x80 >> i)))
                     activeSprites |= (0x80 >> i);
 
                 //If sprite is active and non-transparent pixel has not already been found
-                if (((activeSprites & 0x80) >> i) && ((SPPIXEL & 0x03) == 0)) {
+                if ((activeSprites & (0x80 >> i)) && ((SPPIXEL & 0x03) == 0)) {
                     SPPIXEL |= ((SPR_ATTRS[i] & 0x03) << 2) | ((SPR_PAT[i*2] & 0x80) >> 7) | ((SPR_PAT[i*2 + 1] & 0x80) >> 6);
                     spriteZeroLoaded = (i == 0);
                     spriteHasPriority = !(SPR_ATTRS[i] & 0x20);
@@ -361,7 +368,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
                 //Decrement all x positions and shift active sprite pattern data
                 //Exhausted sprites aren't removed, just skipped
                 SPR_XPOS[i]--;
-                if ((activeSprites & 0x80) >> i) {
+                if (activeSprites & (0x80 >> i)) {
                     SPR_PAT[i*2] <<= 1;
                     SPR_PAT[i*2 + 1] <<= 1;
                 }
@@ -371,6 +378,9 @@ void PPU::SCANLINE(uint16_t SLINE) {
         //Check for sprite zero hit, only if all rendering enabled, the zero hit hasn't already happened, and sprite zero is being rendered
         if ((PPUMASK & 0x08) && (PPUMASK & 0x10) && !spriteZeroHit && spriteZeroRendered)
             spriteZeroHit = (spriteZeroLoaded && ((SPPIXEL & 0x03) != 0) && ((BGPIXEL & 0x03) != 0));
+
+        if (spriteZeroHit && (PPUMASK & 0x08))
+            PPUSTATUS |= 0x40;
 
         //Multiplex
         if ((SPPIXEL & 0x03) && (BGPIXEL & 0x03))
@@ -404,8 +414,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
                     if ((TICK % 2) == 1)
                         data = OAM_PRIMARY[n*4]; //possible to go out of bounds?
                     else if (foundSprites < 8) {
-                        if (OAM_SECONDARY.size() < 32)
-                            OAM_SECONDARY.emplace_back(data);
+                        OAM_SECONDARY[foundSprites*4] = data;
                         if (In_range(data, SLINE+1, PPUCTRL & 0x20))
                             step = 2;
                         else
@@ -414,9 +423,9 @@ void PPU::SCANLINE(uint16_t SLINE) {
                     break;
                 case 2: //Copies next 3 bytes if y-cord in range
                     if ((TICK % 2) == 1) {
-                        data = OAM_PRIMARY[n*4 + offset++];
-                    } else if (OAM_SECONDARY.size() < 32) {
-                        OAM_SECONDARY.emplace_back(data);
+                        data = OAM_PRIMARY[n*4 + offset];
+                    } else {
+                        OAM_SECONDARY[foundSprites*4 + offset++] = data;
                         if (offset == 4) { //All bytes copied
                             offset = 1;
                             spriteZeroRendered = (n == 0) ? true : spriteZeroRendered;
@@ -444,15 +453,22 @@ void PPU::SCANLINE(uint16_t SLINE) {
             }
         }
 
-
-        CYCLE();
-        /*if ((SLINE >= 127) && (SLINE <= 135)) {
-            P_LOG << "2nd OAM: ";
+        /*if (log) {
+            P_LOG << "Sline: " << int(SLINE) << '\n';
             for (int i : OAM_SECONDARY)
                 P_LOG << i << " ";
             P_LOG << "\n\n";
         }*/
+        CYCLE();
     }
+
+    /*if ((PPUMASK & 0x08) && (PPUMASK & 0x10)) {
+        P_LOG << "Sline: " << int(SLINE) << '\n';
+        for (int i : OAM_SECONDARY)
+            P_LOG << i << " ";
+        P_LOG << "\n\n";
+    }*/
+
 
 
     //Copy all horizontal bits from t to v at tick 257 if rendering enabled
@@ -460,9 +476,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
         VRAM_ADDR &= 0xFBE0;
         VRAM_ADDR |= (VRAM_TEMP & 0x041F);
     }
-    //P_LOG << '\n';
-    if ((SLINE >= 127) && (SLINE <= 135))
-        P_LOG << "Found " << int(foundSprites) << " sprites\n\n";
+   
     //Cycles 257-320 - Fetch tile data for sprites on next scanline - OAMADDR register determines which is sprite 0
     SPR_ATTRS.clear();
     SPR_XPOS.clear();
@@ -485,9 +499,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
                 SPR_PAT_ADDR = (((PPUCTRL & 0x08) << 9) | (OAM_SECONDARY[i*4 + 1]*16));
                 //Vertically flipped or not?
                 SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (8 - SLINE - OAM_SECONDARY[i*4]) : (SLINE + 1 - OAM_SECONDARY[i*4]); 
-                /*if ((SLINE >= 127) && (SLINE <= 135))
-                    P_LOG << "Sprite pattern addr: " << std::hex << int(SPR_PAT_ADDR) << "\n\n";
-                */
+                
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 CYCLE(2);
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
@@ -506,36 +518,21 @@ void PPU::SCANLINE(uint16_t SLINE) {
             if (SPR_ATTRS.back() & 0x40) {
                 auto flip_byte = [](uint8_t A) {
                     uint8_t B = 0;
-                    for (uint8_t i=0; i<8; i++) {
+                    for (uint8_t i=0; i<7; i++) {
                         B |= (A & 0x01);
                         B <<= 1;
                         A >>= 1;
                     }
-                    return B;
+                    return (B | A);
                 };
 
                 SPR_PAT.back() = flip_byte(SPR_PAT.back());
+                SPR_PAT[SPR_PAT.size() - 2] = flip_byte(SPR_PAT[SPR_PAT.size() - 2]);
             }
             foundSprites--;
         }
         
     }
-
-    /*if ((SLINE >= 127) && (SLINE <= 135)) {
-        P_LOG << "2nd OAM: ";
-        for (int i : OAM_SECONDARY)
-            P_LOG << i << " ";
-        P_LOG << "\n\n";
-
-        for (int i : SPR_PAT)
-                P_LOG << i << " ";
-            P_LOG << "\n\n";
-
-            P_LOG << "Attribute data: ";
-            for (int i : SPR_ATTRS)
-                P_LOG << i << " ";
-            P_LOG << "\n\n";
-    }*/
 
     //Cycle 321-336
     PRE_SLINE_TILE_FETCH();
@@ -696,7 +693,7 @@ uint8_t PPU::REG_READ(uint8_t REG) {
         case 3:
             break;
         case 4: //Attempting to read 0x2004 before cycle 65 on visible scanlines returns 0xFF
-            P_LOG << "Read from " << std::hex << int(OAMADDR) << " Get: " << std::hex << int(OAM_PRIMARY[OAMADDR]) << '\n';
+            //P_LOG << "Read from " << std::hex << int(OAMADDR) << " Get: " << std::hex << int(OAM_PRIMARY[OAMADDR]) << '\n';
             return OAM_PRIMARY[OAMADDR];
         case 5:
             break;

@@ -56,7 +56,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
     if ((ADDR >= 0x4020) && (ADDR <= 0xFFFF)) {
        if (SAVE) {
             uint8_t L = ROM->CPU_ACCESS(ADDR);
-            //LOG << std::hex << int(L) << " ";
+            LOG << std::hex << int(L) << " ";
             return L;
        }
         return ROM->CPU_ACCESS(ADDR);
@@ -99,7 +99,7 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
 
 //CPU seems to lag behind PPU thread which may be due to all the successive separate calls to WAIT
 //For the EXEC function at least, have the proper number of cycles be waited out at the end of the function
-void CPU::WAIT(uint8_t N) {
+inline void CPU::WAIT(uint8_t N) {
     while (pause)
         std::this_thread::yield();
     //Wait on condition var, will be signaled by the PPU every time it goes through 3 ticks
@@ -200,7 +200,7 @@ void CPU::RUN() {
 
         //Compose a string and append after EXEC
         LOG_STREAM.str(std::string());
-        //LOG << std::hex << int(CODE) << " ";
+        LOG << std::hex << int(CODE) << " ";
         LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
         LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
         LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
@@ -391,10 +391,10 @@ void CPU::RUN() {
         }
         //At this point, all cycles of the instruction have been executed
         //LOG << "Instr end\n";
-        //LOG << OPCODES[CODE] << '\t' << '\t';
+        LOG << OPCODES[CODE] << '\t' << '\t';
         //CONTROL.get(B, 6);
         //CONTROL.getline(B, 6);
-        //LOG << LOG_STREAM.str();
+        LOG << LOG_STREAM.str();
 
        /* if (B != OPCODES[CODE]) {
             std::cout << "Instruction mismatch: " << B << " != " << OPCODES[CODE] << std::endl;

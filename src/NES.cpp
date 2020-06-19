@@ -6,6 +6,7 @@
 #include <thread>
 
 bool pause;
+bool log;
 SDL_cond* mainPPUCond;
 SDL_mutex* mainThreadMutex;
 
@@ -20,6 +21,7 @@ int main(int argc, char *argv[]) {
     SDL_Event evt;
     bool quit = false;
     pause = false;
+    log = false;
 
     SDL_Thread* PPU_Thread;
     SDL_Thread* CPU_Thread;
@@ -62,6 +64,9 @@ int main(int argc, char *argv[]) {
                     case SDLK_p:
                         pause = true;
                         break;
+                    case SDLK_l:
+                        log = true;
+                        break;
                 }
 
                 while (pause) {
@@ -69,6 +74,8 @@ int main(int argc, char *argv[]) {
                         if (evt.type == SDL_KEYDOWN) {
                             if (evt.key.keysym.sym == SDLK_p)
                                 pause = false;
+                            else if (evt.key.keysym.sym == SDLK_l)
+                                log = false;
                         }
                     }
                     SDL_Delay(500);

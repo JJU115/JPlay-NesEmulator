@@ -92,7 +92,7 @@ void PPU::CYCLE(uint16_t N) {
         cycleCount++;
     }
     //Temporary for now to resolve background render timing issues
-    while (cycleCount > 9)
+    while (cycleCount > 6)
         std::this_thread::yield();
 
     //P_LOG << "PPU Tick\n";
@@ -234,13 +234,6 @@ void PPU::PRE_RENDER() {
 
 //Sprite evaluation for the next scanline occurs at the same time
 void PPU::SCANLINE(uint16_t SLINE) {
-    
-    /*if (SLINE == 1 && (PPUMASK & 0x10)) {
-        P_LOG << "OAM: ";
-        for (int i : OAM_PRIMARY)
-            P_LOG << std::hex << i << " ";
-        P_LOG << "\n\n";
-    }*/
 
     OAM_SECONDARY.assign(32, 255);
     TICK = 0;
@@ -263,7 +256,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
     uint8_t foundSprites = 0;
     auto In_range = [](uint8_t yPos, uint16_t slineNum, bool sprSize) {
         int16_t diff = yPos - slineNum;
-        return (sprSize) ? ((diff <= 0) && (diff > -16)) : ((diff <= 0) && (diff > -8));
+        return (sprSize) ? ((diff <= -1) && (diff >= -16)) : ((diff <= -1) && (diff >= -8));
     };
 
     auto IncN = [&]() {
@@ -321,24 +314,14 @@ void PPU::SCANLINE(uint16_t SLINE) {
             default:
                 break;
         }
-        if (SLINE >= 0x18 && SLINE <=0x1F && log) {
-            P_LOG << "Sline: " << SLINE << '\n';
-            P_LOG << "X-Positions: ";
-            for (int i : SPR_XPOS)
-                P_LOG << i << " ";
-            P_LOG << '\n';
-            P_LOG << "Pattern data: ";
-            for (int i : SPR_PAT)
-                P_LOG << i << " ";
-            P_LOG << "\n\n";
-        }
+        
 
         BGPIXEL = 0x3F00;
         //Background pixel composition
         if (PPUMASK & 0x08) {
             BGPIXEL |= (((BGSHIFT_ONE & 0x8000) >> 15) | ((BGSHIFT_TWO & 0x8000) >> 14));
             //Form the pixel color
-            if ((((SLINE-1)/16) % 2) == 0)
+            if ((((SLINE)/16) % 2) == 0)
                 BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x03) << 2) : (ATTRSHIFT_ONE & 0x0C);
             else
                 BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x30) >> 2) : ((ATTRSHIFT_ONE & 0xC0) >> 4);
@@ -389,6 +372,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
             COL = FETCH(SPPIXEL);
         else
             COL = FETCH(BGPIXEL);
+
 
 
         //nesdev says there's a delay in rendering and the 1st pixel is output only at cycle 4?
@@ -498,7 +482,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
             if ((PPUCTRL & 0x20) == 0) { //8*8 sprites
                 SPR_PAT_ADDR = (((PPUCTRL & 0x08) << 9) | (OAM_SECONDARY[i*4 + 1]*16));
                 //Vertically flipped or not?
-                SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (8 - SLINE - OAM_SECONDARY[i*4]) : (SLINE + 1 - OAM_SECONDARY[i*4]); 
+                SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (7 - SLINE - OAM_SECONDARY[i*4]) : (SLINE - OAM_SECONDARY[i*4]); 
                 
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 CYCLE(2);
@@ -506,7 +490,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
                 CYCLE(2);
             } else { //8*16 sprites
                 SPR_PAT_ADDR = (((OAM_SECONDARY[i*4 + 1] & 0x01) << 12) | (((OAM_SECONDARY[i*4 + 1] & 0xFE) >> 1) * 16));
-                SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (23 - ((VRAM_ADDR & 0x7000) >> 12)) : ((VRAM_ADDR & 0x7000) >> 12);
+                SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (23 - SLINE - OAM_SECONDARY[i*4]) : (SLINE - OAM_SECONDARY[i*4]); //True part of ternary may need to be 22
                     
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 CYCLE(2);

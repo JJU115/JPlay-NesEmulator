@@ -24,7 +24,7 @@ class CPU {
     private:
         uint8_t FETCH(uint16_t ADDR, bool SAVE);
         void WRITE(uint8_t VAL, uint16_t ADDR);
-        void EXEC(uint8_t OP, char ADDR_TYPE);
+        uint8_t EXEC(uint8_t OP, char ADDR_TYPE);
         void BRANCH(char FLAG, char VAL);
         void STACK_PUSH(uint8_t BYTE);
         unsigned char STACK_POP();

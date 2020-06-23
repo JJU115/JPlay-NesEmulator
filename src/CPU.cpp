@@ -54,11 +54,11 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
 
 
     if ((ADDR >= 0x4020) && (ADDR <= 0xFFFF)) {
-       if (SAVE) {
+       /*if (SAVE) {
             uint8_t L = ROM->CPU_ACCESS(ADDR);
             LOG << std::hex << int(L) << " ";
             return L;
-       }
+       }*/
         return ROM->CPU_ACCESS(ADDR);
     } 
 
@@ -86,8 +86,7 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
         P->OAMDMA = VAL;
         WAIT();  
         for (uint16_t i=0; i<256; i++) {
-            WAIT();
-            WAIT();
+            WAIT(2);
             P->REG_WRITE(FETCH((VAL << 8) + i), 4);
         }
     }
@@ -99,65 +98,46 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
 
 //CPU seems to lag behind PPU thread which may be due to all the successive separate calls to WAIT
 //For the EXEC function at least, have the proper number of cycles be waited out at the end of the function
-inline void CPU::WAIT(uint8_t N) {
+void CPU::WAIT(uint8_t N) {
     while (pause)
         std::this_thread::yield();
     //Wait on condition var, will be signaled by the PPU every time it goes through 3 ticks
     //CPU_COND.wait(CPU_LCK);
     //std::this_thread::sleep_for(std::chrono::nanoseconds(558));
-    while (P->cycleCount < 3)
-        std::this_thread::yield();
+    while (N-- > 0) {
+        while (P->cycleCount < 3)
+            std::this_thread::yield();
+        P->cycleCount -= 3;
+    }
 
-    P->cycleCount -= 3;
     if (CTRL_IGNORE < 30000)
         CTRL_IGNORE++;
 }
 
+
 void CPU::RESET() {
-    WAIT();
-    WAIT();
-    STCK_PNT--;
-    WAIT();
-    STCK_PNT--;
-    WAIT();
-
+    STCK_PNT -= 3;
     STAT &= 0xEF;
-    STCK_PNT--;
-    WAIT();
-
-    PROG_CNT &= 0;
-    PROG_CNT |= FETCH(0xFFFC);
+    PROG_CNT = ((FETCH(0xFFFD) << 8) | FETCH(0xFFFC));
     STAT |= 0x04;
-    WAIT();
-
-    PROG_CNT |= (FETCH(0xFFFD) << 8);
-    WAIT();
     CTRL_IGNORE = 0;
 
+    WAIT(7);
 }
 
 
 void CPU::IRQ_NMI(uint16_t V) {
-    WAIT();
-    WAIT();
 
     STACK_PUSH(PROG_CNT >> 8);
-    WAIT();
-
     STACK_PUSH(PROG_CNT & 0x00FF);
-    WAIT();
-
+    
     STAT &= 0xEF;
     STACK_PUSH(STAT);
-    WAIT();
-
-    PROG_CNT &= 0;
-    PROG_CNT |= FETCH(V++);
+    
+    PROG_CNT = ((FETCH(V+1) << 8) | (FETCH(V)));
     STAT |= 0x04;
-    WAIT();
 
-    PROG_CNT |= (FETCH(V) << 8);
-    WAIT();
+    WAIT(7);
 }
 
 //Concerns regearding interrupts, specifically when and where to set interrupt bools, need to look into it more
@@ -165,6 +145,7 @@ void CPU::RUN() {
     RAM.fill(0); //Clear RAM
     CTRL_IGNORE = 0;
     bool unofficial = false;
+    uint8_t cycleCount;
     
     //Enable logging
     LOG.open("CPU_LOG.txt", std::ios::trunc | std::ios::out);
@@ -196,11 +177,11 @@ void CPU::RUN() {
             IRQ_NMI(0xFFFE);
 
         CODE = FETCH(PROG_CNT++);
-        WAIT();
+        cycleCount = 1;
 
         //Compose a string and append after EXEC
         LOG_STREAM.str(std::string());
-        LOG << std::hex << int(CODE) << " ";
+        //LOG << std::hex << int(CODE) << " ";
         LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
         LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
         LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
@@ -212,144 +193,99 @@ void CPU::RUN() {
             //BRK - This causes an interrupt
             case 0x00:
                 PROG_CNT++;
-                WAIT();
 
                 STACK_PUSH(PROG_CNT >> 8);
-                WAIT();
-
                 STACK_PUSH(PROG_CNT & 0x00FF);
-                WAIT();
-
+                
                 STAT |= 0x10;
                 STACK_PUSH(STAT | 0x30);
-                WAIT();
-
-                PROG_CNT &= 0;
-                PROG_CNT |= FETCH(0xFFFE);
+                
+                PROG_CNT = ((FETCH(0xFFFF) << 8) | FETCH(0xFFFE));
                 STAT |= 0x04;
-                WAIT();
-
-                PROG_CNT |= FETCH(0xFFFF) << 8;
-                WAIT();
+ 
                 I = BRK = true;
+                cycleCount += 6;
                 break;
             //RTI
             case 0x40:
                 I = false;
-                WAIT();
-
-                WAIT();
 
                 STAT = STACK_POP();
-                WAIT();
-
-                PROG_CNT &= 0;
-                PROG_CNT |= STACK_POP();
-                WAIT();
-
+                
+                PROG_CNT = (0 | STACK_POP());
                 PROG_CNT |= (STACK_POP() << 8);
-                WAIT();
+                
+                cycleCount += 5;
                 break;
             //RTS
             case 0x60:
-                WAIT();
-
-                WAIT();
-
-                PROG_CNT &= 0;
-                PROG_CNT |= STACK_POP();
-                WAIT();
-
+                PROG_CNT = (0 | STACK_POP());
                 PROG_CNT |= (STACK_POP() << 8);
-                WAIT();
-
+                
                 PROG_CNT++;
-                WAIT();
+                cycleCount += 5;
                 break;
             //PHA
             case 0x48:
-                WAIT();
-
                 STACK_PUSH(ACC);
-                WAIT();
+                cycleCount += 2;
                 break;
             //PHP
             case 0x08:
-                WAIT();
-
                 STACK_PUSH(STAT | 0x30);
-                WAIT();
+                cycleCount += 2;
                 break;
             //PLA
             case 0x68:
-                WAIT();
-
-                WAIT();
-
                 ACC = STACK_POP();
                 STAT = (ACC == 0) ? (STAT | 0x02) : (STAT & 0xFD);
-                STAT = ((ACC & 0x80) > 0) ? (STAT | 0x80) : (STAT & 0x7F);      
-                WAIT();
+                STAT = ((ACC & 0x80) > 0) ? (STAT | 0x80) : (STAT & 0x7F); 
+
+                cycleCount += 3;
                 break;
             //PLP
             case 0x28:
-                WAIT();
-
-                WAIT();
-
                 STAT = STACK_POP();
-                WAIT();
+                cycleCount += 3;
                 break;
             //JSR
             case 0x20:
                 LOW = FETCH(PROG_CNT++, true);
-                WAIT();
-
-                WAIT();
-
+               
                 STACK_PUSH(PROG_CNT >> 8);
-                WAIT();
-
                 STACK_PUSH(PROG_CNT & 0x00FF);
-                WAIT();
-
+            
                 HIGH = FETCH(PROG_CNT, true);
-                PROG_CNT &= 0;
-                PROG_CNT |= LOW;
-                PROG_CNT |= (HIGH << 8);
-                WAIT();
+                PROG_CNT = ((HIGH << 8) | LOW);
+               
+                cycleCount += 5;
                 break;
             //JMP - Absolute
             case 0x4C:
                 LOW = FETCH(PROG_CNT++, true);
-                WAIT();
-
                 HIGH = FETCH(PROG_CNT, true);
-                PROG_CNT &= 0;
-                PROG_CNT |= LOW;
-                PROG_CNT |= (HIGH << 8);
-                WAIT();
+                
+                PROG_CNT = ((HIGH << 8) | LOW);
+                
+                cycleCount += 2;
                 break;
             //JMP - Indirect Absolute
             case 0x6C:
                 LOW = FETCH(PROG_CNT++, true);
-                WAIT();
-
                 HIGH = FETCH(PROG_CNT++, true);
-                WAIT();
-                WAIT();
-
+                
                 PROG_CNT &= 0;
                 PROG_CNT |= FETCH(((HIGH << 8) | LOW), true);
                 if ((LOW & 0xFF) == 0xFF)
                     PROG_CNT |= (FETCH(HIGH << 8, true) << 8);
                 else
                     PROG_CNT |= (FETCH(((HIGH << 8) | LOW) + 1) << 8);
-                WAIT();
+                
+                cycleCount += 4;
                 break;
             default:
                 if ((CODE & 0x0F) == 0x0A || (CODE & 0x0F) == 0x08) {
-                    EXEC(CODE, 8);
+                    cycleCount += EXEC(CODE, 8);
                     break;
                 }
 
@@ -360,25 +296,25 @@ void CPU::RUN() {
 
                 switch (CODE & 0x03) {  //Extract bits 0,1
                     case 0:
-                        EXEC(CODE, (CODE & 0x1C) >> 2);
+                        cycleCount += EXEC(CODE, (CODE & 0x1C) >> 2);
                         break;
                     case 1:
                         switch ((CODE & 0x1C) >> 2) {
                             case 0:
-                                EXEC(CODE, 2);
+                                cycleCount += EXEC(CODE, 2);
                                 break;
                             case 2:
-                                EXEC(CODE, 0);
+                                cycleCount += EXEC(CODE, 0);
                                 break;
                             default:
-                                EXEC(CODE, (CODE & 0x1C) >> 2);
+                                cycleCount += EXEC(CODE, (CODE & 0x1C) >> 2);
                         }
                         break;
                     case 2:
                         if (CODE != 0xBE)
-                            EXEC(CODE, (CODE & 0x1C) >> 2);
+                            cycleCount += EXEC(CODE, (CODE & 0x1C) >> 2);
                         else
-                            EXEC(CODE, 6);
+                            cycleCount += EXEC(CODE, 6);
                         break;
                     default:
                         unofficial = true;
@@ -391,16 +327,16 @@ void CPU::RUN() {
         }
         //At this point, all cycles of the instruction have been executed
         //LOG << "Instr end\n";
-        LOG << OPCODES[CODE] << '\t' << '\t';
+        //LOG << OPCODES[CODE] << '\t' << '\t';
         //CONTROL.get(B, 6);
         //CONTROL.getline(B, 6);
-        LOG << LOG_STREAM.str();
+        //LOG << LOG_STREAM.str();
 
        /* if (B != OPCODES[CODE]) {
             std::cout << "Instruction mismatch: " << B << " != " << OPCODES[CODE] << std::endl;
             break;
         }*/
-
+        WAIT(cycleCount);
     }
 }
 
@@ -415,10 +351,11 @@ nestest so will reconcile with PPU operation.
 
 */
 
-void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
+uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
   
     bool W_BACK = false;
     uint8_t *REG_P = nullptr;
+    uint8_t cycles = 0;
     
     //Create an enum for ADDR_TYPE instead of having random numbers
     switch (ADDR_TYPE) {
@@ -430,68 +367,56 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 1:
             //Fetch the addresss
             VAL = FETCH(PROG_CNT++, true);
-            WAIT();
             WBACK_ADDR = (0x0000 | VAL);
-            //Fetch value
-            //VAL = FETCH(WBACK_ADDR);
+            cycles++;
             break;
         //Indexed-Indirect
         case 2:
             POINT = FETCH(PROG_CNT++, true);
-            WAIT();
-            WAIT();
             WBACK_ADDR = (0 | FETCH((POINT + IND_X) % 256, true));
-            WAIT();
             WBACK_ADDR |= (FETCH((POINT + IND_X + 1) % 256, true) << 8);
-            WAIT();
-            //VAL = FETCH(WBACK_ADDR);
+            cycles += 4;
             break;
         //Absolute
         case 3:
             LOW = FETCH(PROG_CNT++, true);
-            WAIT();
             HIGH = FETCH(PROG_CNT++, true);
-            WAIT();
             WBACK_ADDR = (LOW | (HIGH << 8));
-            //VAL = FETCH(WBACK_ADDR);
+            cycles += 2;
             break;
         //Indirect-Indexed - Potential 'oops' cycle, only for read instructions, here
         case 4:
             POINT = FETCH(PROG_CNT++, true);
-            WAIT();
             LOW = FETCH(POINT);
-            WAIT();
-            HIGH = FETCH((POINT + 1) % 256); //test result
+            HIGH = FETCH((POINT + 1) % 256);
+
             //'oops' cycle
             if ((OP != 0x91) && ((LOW + IND_Y) > 255))
-                WAIT(); 
-            WAIT();
+                cycles++;
+            
             WBACK_ADDR = ((LOW | (HIGH << 8)) + IND_Y);
-           // VAL = FETCH((LOW | (HIGH << 8)) + IND_Y);
+            cycles += 3;
             break;
         //Zero-Page Indexed
         case 5:
             VAL = FETCH(PROG_CNT++, true);
-            WAIT();
             LOW = (OP != 0xB6 && OP != 0x96) ? (VAL + IND_X) % 256 : (VAL + IND_Y) % 256; //test result
-            HIGH = 0;
-           // VAL = FETCH(LOW);
-            WAIT();
             WBACK_ADDR = LOW;
+            cycles += 2;
             break;
         //Absolute Indexed - Potential 'oops' cycle, only for read instructions, here
         case 6:
         case 7: {
             WBACK_ADDR = (0 | FETCH(PROG_CNT++, true));
-            WAIT();
             WBACK_ADDR |= (FETCH(PROG_CNT++, true) << 8);
-            WAIT();
+            
             //'Oops' cycle
             bool oops = (((OP & 0x0F) == 0x0D) || ((OP & 0x0F) == 0x09));
             if (oops && ((ADDR_TYPE == 6 && (LOW + IND_X) > 255) || (ADDR_TYPE == 7 && (LOW + IND_Y) > 255)))
-                WAIT();
+                cycles++;
+
             WBACK_ADDR += (ADDR_TYPE == 7) ? IND_X : IND_Y;
-            //VAL = FETCH(WBACK_ADDR);
+            cycles += 2;
             break; }
         //Accumulator/Implied - No timed waits needed
         default:
@@ -531,17 +456,16 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             break;
         //ASL
         case 0x1E:
-            WAIT();
+            cycles++;
         case 0x06:
-            WAIT();
-            WAIT();
+            cycles += 2;
         case 0x16:
         case 0x0E:
             VAL = FETCH(WBACK_ADDR);
             STAT &= 0xFE;
             STAT |= (VAL >> 7);
             VAL = VAL << 1;
-            W_BACK = true;
+            WRITE(VAL, WBACK_ADDR); //W_BACK = true;
             REG_P = &VAL;
             break;
         case 0x0A:
@@ -612,15 +536,13 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             break;
         //DEC
         case 0xDE:
-            WAIT();
+            cycles++;
         case 0xD6:
         case 0xCE:
         case 0xC6:
-            VAL = FETCH(WBACK_ADDR);
-            WAIT();
-            WAIT();
-            VAL--;
-            W_BACK = true;
+            VAL = FETCH(WBACK_ADDR) - 1;
+            cycles += 2;
+            WRITE(VAL, WBACK_ADDR); //W_BACK = true;
             REG_P = &VAL;
             break;
         //DEX
@@ -648,15 +570,13 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             break;
         //INC
         case 0xFE:
-            WAIT();
+            cycles++;
         case 0xEE:
         case 0xE6:
         case 0xF6:
-            VAL = FETCH(WBACK_ADDR);
-            WAIT();
-            WAIT();
-            VAL++;
-            W_BACK = true;
+            VAL = FETCH(WBACK_ADDR) + 1;
+            cycles += 2;
+            WRITE(VAL, WBACK_ADDR);
             REG_P = &VAL;
             break;
         //INX
@@ -716,17 +636,16 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             REG_P = &ACC;
             break;
         case 0x5E:
-            WAIT();
+            cycles++;
         case 0x4E:
         case 0x46:
         case 0x56:
             VAL = FETCH(WBACK_ADDR);
-            WAIT();
-            WAIT();
+            cycles += 2;
             STAT &= 0xFE;
             STAT |= (0x01 & VAL);
             VAL = VAL >> 1;
-            W_BACK = true;
+            WRITE(VAL, WBACK_ADDR); //W_BACK = true;
             REG_P = &VAL;
             break;
         //NOP
@@ -755,19 +674,18 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             REG_P = &ACC;
             break;
         case 0x3E:
-            WAIT();
+            cycles++;
         case 0x2E:
         case 0x26:
         case 0x36:
             VAL = FETCH(WBACK_ADDR);
-            WAIT();
-            WAIT();
+            cycles += 2;
             TEMP = VAL << 1;
             TEMP |= (0x01 & STAT);
             STAT &= 0xFE;
             STAT |= ((0x80 & VAL) >> 7);
             VAL = TEMP;
-            W_BACK = true;
+            WRITE(VAL, WBACK_ADDR); //W_BACK = true;
             REG_P = &VAL;
             break;
         //ROR
@@ -780,19 +698,18 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             REG_P = &ACC;
             break;
         case 0x7E:
-            WAIT();
+            cycles++;
         case 0x6E:
         case 0x66:
         case 0x76:
             VAL = FETCH(WBACK_ADDR);
-            WAIT();
-            WAIT();
+            cycles += 2;
             TEMP = STAT;
             STAT &= 0xFE;
             STAT |= (0x01 & VAL);
             VAL = VAL >> 1;
             VAL |= ((TEMP & 0x01) << 7);
-            W_BACK = true;
+            WRITE(VAL, WBACK_ADDR); //W_BACK = true;
             REG_P = &VAL;
             break;
         //SBC
@@ -831,27 +748,29 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x91:
         case 0x9D:
         case 0x99:
-            WAIT();
+            cycles++;
         case 0x81:
         case 0x85:
         case 0x8D:
         case 0x95:
-            VAL = ACC;
-            W_BACK = true;
+            //VAL = ACC;
+            WRITE(ACC, WBACK_ADDR); //W_BACK = true;
             break;
         //STX
         case 0x86:
         case 0x8E:
         case 0x96:
-            VAL = IND_X;
-            W_BACK = true;
+            //VAL = IND_X;
+            //W_BACK = true;
+            WRITE(IND_X, WBACK_ADDR);
             break;
         //STY
         case 0x84:
         case 0x94:
         case 0x8C:
-            VAL = IND_Y;
-            W_BACK = true;
+            //VAL = IND_Y;
+            //W_BACK = true;
+            WRITE(IND_Y, WBACK_ADDR);
             break;
         //TAX
         case 0xAA:
@@ -883,20 +802,15 @@ void CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             REG_P = &ACC;
             break;       
     }
-    
-    if (W_BACK) {
-        WRITE(VAL, WBACK_ADDR);
-    }
 
-    //This section may not be necessary at all
     //Examine and change status flags if needed
     if (REG_P) {
         STAT = (*REG_P == 0) ?  (STAT | 0x02) : (STAT & 0xFD);
         STAT = ((*REG_P & 0x80) > 0) ?  (STAT | 0x80) : (STAT & 0x7F); 
     }
     
-    //To wait out the last cycle of most instructions
-    WAIT();
+    //Plus one to wait out the last cycle of most instructions
+    return (cycles + 1);
 }
 
 //Branching is signed!!!
@@ -922,12 +836,11 @@ void CPU::BRANCH(char FLAG, char VAL) {
     LOG_STREAM << "VAL: ";
     LOG_STREAM << std::hex << int(VAL);*/
     int8_t OPRAND = FETCH(PROG_CNT++, true);
-    WAIT();
     
     if (FLAG == VAL) {
         PROG_CNT += OPRAND;
         WAIT();
     }
     
-    WAIT();
+    WAIT(2);
 }

@@ -52,6 +52,13 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
         return RAM[ADDR];
     }
 
+    //Controller probe
+    if (ADDR == 0x4016) {
+        TEMP = CONTROLLER1 & 1;
+        CONTROLLER1 >>= 1;
+        return TEMP;
+    }
+
 
     if ((ADDR >= 0x4020) && (ADDR <= 0xFFFF)) {
        /*if (SAVE) {
@@ -90,6 +97,16 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
             P->REG_WRITE(FETCH((VAL << 8) + i), 4);
         }
     }
+
+    //Controller probe
+    if (ADDR == 0x4016) {
+        if (VAL == 1) 
+            probe = true;       
+        else if (VAL == 0)
+            probe = false;
+    }
+
+
 
     if ((ADDR >= 0x4020) && (ADDR <= 0xFFFF))
         ROM->CPU_ACCESS(ADDR, VAL, false);
@@ -146,7 +163,7 @@ void CPU::RUN() {
     CTRL_IGNORE = 0;
     bool unofficial = false;
     uint8_t cycleCount;
-    
+    const uint8_t *keyboard = SDL_GetKeyboardState(NULL);
     //Enable logging
     LOG.open("CPU_LOG.txt", std::ios::trunc | std::ios::out);
     //CONTROL.open("NESTEST_LOG.txt");
@@ -178,7 +195,7 @@ void CPU::RUN() {
 
         CODE = FETCH(PROG_CNT++);
         cycleCount = 1;
-
+        
         //Compose a string and append after EXEC
         LOG_STREAM.str(std::string());
         //LOG << std::hex << int(CODE) << " ";
@@ -331,6 +348,19 @@ void CPU::RUN() {
         //CONTROL.get(B, 6);
         //CONTROL.getline(B, 6);
         //LOG << LOG_STREAM.str();
+
+        //Controller polling if probe is on
+        //Mapping of keys to buttons is arbitrary at this point just to get things working
+        if (probe) {
+            CONTROLLER1 = keyboard[SDL_SCANCODE_A] | 
+            (keyboard[SDL_SCANCODE_B] << 1) | 
+            (keyboard[SDL_SCANCODE_RSHIFT] << 2) | 
+            (keyboard[SDL_SCANCODE_RETURN] << 3) |
+            (keyboard[SDL_SCANCODE_UP] << 4) |
+            (keyboard[SDL_SCANCODE_DOWN] << 5) | 
+            (keyboard[SDL_SCANCODE_LEFT] << 6) |
+            (keyboard[SDL_SCANCODE_RIGHT] << 7); 
+        }
 
        /* if (B != OPCODES[CODE]) {
             std::cout << "Instruction mismatch: " << B << " != " << OPCODES[CODE] << std::endl;

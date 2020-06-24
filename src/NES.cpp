@@ -89,7 +89,6 @@ int main(int argc, char *argv[]) {
         std::cout << "FPS: " << (1000/elapsedTime) << '\n';
         if (elapsedTime < 16)
             std::this_thread::sleep_for(std::chrono::milliseconds(16 - elapsedTime));
-        //std::cout << RICOH_2C02.cycleCount << '\n';
     }
 
     return 0;

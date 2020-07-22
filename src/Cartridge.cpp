@@ -6,10 +6,6 @@
 
 
 //For now, only iNES format will be supported, NES 2.0 will come later after initial dev wraps
-/*Cartridge& Cartridge::operator=(const Cartridge& C) {
-    ROM.swap(C.ROM);
-}*/
-
 
 void Cartridge::LOAD(char *FILE) {
     //Error handle if needed

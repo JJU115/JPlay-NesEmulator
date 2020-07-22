@@ -52,6 +52,9 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
         return RAM[ADDR];
     }
 
+    //if (ADDR == 0x4015)
+      //  return A->Reg_Read();
+
     //Controller probe
     if (ADDR == 0x4016) {
         TEMP = CONTROLLER1 & 1;
@@ -107,6 +110,10 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
     }
 
 
+    //APU registers
+    /*if ((ADDR >= 0x4000) && (ADDR <= 0x4017))
+        A->Reg_Write(ADDR, VAL);*/
+
 
     if ((ADDR >= 0x4020) && (ADDR <= 0xFFFF))
         ROM->CPU_ACCESS(ADDR, VAL, false);
@@ -118,9 +125,7 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
 void CPU::WAIT(uint8_t N) {
     while (pause)
         std::this_thread::yield();
-    //Wait on condition var, will be signaled by the PPU every time it goes through 3 ticks
-    //CPU_COND.wait(CPU_LCK);
-    //std::this_thread::sleep_for(std::chrono::nanoseconds(558));
+    
     while (N-- > 0) {
         while (P->cycleCount < 3)
             std::this_thread::yield();

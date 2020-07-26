@@ -51,6 +51,7 @@ struct Envelope {
 };
 
 
+//Put a bool here to determine if sweep is silencing channel, note the t < 8 condition
 struct SweepUnit {
     uint8_t divider;
     uint16_t targetPeriod;
@@ -59,32 +60,39 @@ struct SweepUnit {
     uint8_t sweepControl;
     bool reloadFlag;
     bool channelNum; //true = 1, false = 2
+    bool silence;
 
+    //Check muting here, when subtracting does underflow from 0 to ffff happen? If so sweep would mute everytime
+    //the negate flag is set and the shift amount is 0
     void calculatePeriod() {
         int16_t shift = (rawTimer >> (sweepControl & 0x07));
         targetPeriod = truePeriod + ((sweepControl & 0x08) ? shift*(-1) - channelNum : shift);
+        silence = (targetPeriod > 0x7FF || truePeriod < 8);
     }
 
     void clock() {
         if (divider == 0) {
-            if ((targetPeriod <= 0x7FF) && (sweepControl & 0x80) && (rawTimer >> (sweepControl & 0x07))) {
+            if (!silence && (sweepControl & 0x80) && (rawTimer >> (sweepControl & 0x07))) {
                 truePeriod = targetPeriod;
                 calculatePeriod();
             }       
-            divider = (0x70 >> 4);
+            divider = ((sweepControl & 0x70) >> 4);
             reloadFlag = false;  
         } else if (reloadFlag) {
-            divider = (0x70 >> 4);
+            divider = ((sweepControl & 0x70) >> 4);
             reloadFlag = false; 
         } else {
             divider--;
         }
 
-        if ((targetPeriod <= 0x7FF) && (sweepControl & 0x80) && (rawTimer >> (sweepControl & 0x07)))
+        if (!silence && (sweepControl & 0x80) && (rawTimer >> (sweepControl & 0x07))) {
             truePeriod = targetPeriod;
+            calculatePeriod();
+        }
     }
 }; 
 
+//sequence is not needed and the timer doesn't need to be decremented so can store the raw value here instead
 struct Pulse {
     uint8_t lengthCount;
     uint16_t timer;
@@ -92,17 +100,19 @@ struct Pulse {
     uint8_t sequence;
     Envelope *pulseEnvelope;
     SweepUnit *pulseSweep;
-    bool silenced;
 };
 
 struct Mixer {
     Pulse *pulseOne;
+    Pulse *pulseTwo;
 
     std::array<double, 31> pulseMixTable;
     std::array<double, 203> tndTable;
     double mixAudio() {
         //Pulse one
-        if (pulseOne->pulseEnvelope->constVol)
+        if (pulseOne->lengthCount == 0 || pulseOne->pulseSweep->silence)
+            return 0;
+        else if (pulseOne->pulseEnvelope->constVol)
             return pulseMixTable[pulseOne->pulseEnvelope->constVolLevel];
         else
             return pulseMixTable[pulseOne->pulseEnvelope->decayLevel];
@@ -111,11 +121,11 @@ struct Mixer {
 
 
 //Looking at mixer formula suggests to me that the final output is applied to all channels as the volume
-//Will implement as that for now and see if it sounds alright
+//Will implement as that for now but it doesn't seem right having all channels play at the same volume
 void audio_callback(void *user_data, uint8_t *raw_buffer, int bytes) {
     float *buffer = (float*)raw_buffer;
     Mixer *output = (Mixer *)user_data;
-    float freq = round(1789773 / (16 * (output->pulseOne->pulseSweep->rawTimer + 1))) / 2.0f; //Provided sweep is disabled
+    float freq = round(1789773 / (16 * (output->pulseOne->pulseSweep->truePeriod + 1))) / 2.0f; //Provided sweep is disabled
     float period = floor((1.0f / freq) * SAMPLE_RATE); //number of data points in a period
     float negate;
     float transform;
@@ -175,6 +185,13 @@ class APU {
             PulseOne = {};
             PulseOne.pulseEnvelope = &PulseOneEnv;
             PulseOne.pulseSweep = &PulseOneSwp;
+
+            PulseTwoEnv = {};
+            PulseTwoSwp = {};
+            PulseTwo = {};
+            PulseTwo.pulseEnvelope = &PulseTwoEnv;
+            PulseTwo.pulseSweep = &PulseTwoSwp;
+
             g_sampleNum = 0;
 
             AudioMixer.pulseOne = &PulseOne;
@@ -182,7 +199,7 @@ class APU {
             want.freq = SAMPLE_RATE; // number of samples per second
             want.format = AUDIO_F32SYS;
             want.channels = 1; // only one channel
-            want.samples = 2048; // buffer-size
+            want.samples = 1024; // buffer-size
             want.userdata = &AudioMixer;
             want.callback = audio_callback;
 
@@ -204,9 +221,14 @@ class APU {
     private:
         //Channel and component structs
         Mixer AudioMixer;
+
         Envelope PulseOneEnv;
         SweepUnit PulseOneSwp;
         Pulse PulseOne;
+
+        Pulse PulseTwo;
+        Envelope PulseTwoEnv;
+        SweepUnit PulseTwoSwp;
 
         //Pulse 1 channel registers
         uint8_t Pulse1Control; //$4000

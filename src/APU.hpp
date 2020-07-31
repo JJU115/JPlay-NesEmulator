@@ -19,7 +19,11 @@ long g_sampleNum;
 const std::array<uint8_t, 32> LENGTH_TABLE = {10, 254, 20, 2, 40, 4, 80, 6,
                                                 160, 8, 60, 10, 14, 12, 26, 14,
                                                 12, 16, 24, 18, 48, 20, 96, 22,
-                                                192, 24, 72, 26, 16, 28, 32, 30}; 
+                                                192, 24, 72, 26, 16, 28, 32, 30};
+
+const std::array<uint16_t, 16> NOISE_PERIOD = {4, 8, 16, 32, 64,
+                                                96, 128, 160, 202, 254,
+                                                380, 508, 762, 1016, 2034, 4068};  
 
 //All these structs may be restructured with different data members to reuduce # of calulations
 //in callback, for example instead of giving the entire control register to the envelope have loop flag, constant vol flag,
@@ -102,9 +106,74 @@ struct Pulse {
     SweepUnit *pulseSweep;
 };
 
+
+struct Triangle {
+    uint8_t sequencePos;
+    uint8_t lengthCount;
+    uint16_t timer;
+    uint8_t reloadVal;
+    uint8_t linearCount;
+    bool controlFlag;
+    bool counterReload;
+
+
+    void clock() {
+        if (counterReload) {
+            linearCount = reloadVal;
+        } else if (linearCount != 0) {
+            linearCount--;
+        }
+
+        if (!controlFlag) {
+            counterReload = false;
+        }
+    }
+
+    //Not sure about muting parameters, go over wiki details again 
+    double getSample(long sampleNum) {
+        if (!(lengthCount) || !(linearCount) || timer < 2)
+            return 0;
+        else { 
+            //amplitude 1, no dividing by 2 since the Triangle timer ticks at twice the Pulse timer rate
+            //Formula has been slightly adjusted so that wave oscillates between 0 and 1
+            float period = floor(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE) * 2;
+            return (2.0 / period * abs((sampleNum % (int)period) - period/2.0));
+        }
+    }
+};
+
+
+struct Noise {
+    uint8_t lengthCount;
+    uint16_t shiftReg;
+    uint16_t timer;
+    bool mode;
+    bool feedBack;
+    Envelope *noiseEnvelope;
+
+
+    void clock() {
+        feedBack = (shiftReg & 0x0001) ^ ((mode) ? ((shiftReg & 0x0040) >> 6) : ((shiftReg & 0x0002) >> 1));
+        shiftReg = shiftReg >> 1;
+        shiftReg &= 0xBFFF;
+        shiftReg |= (feedBack << 14);
+    }
+
+    double getSample() {
+        if (lengthCount == 0 || (shiftReg & 0x0001))
+            return 0;
+        else
+            return 1;
+    }
+};
+
+//The mix audio function has to take inputs from all channels and turn them into a single audio signal
+//Will probably put output function in each channel struct to reduce verbosity in the Mixer
 struct Mixer {
     Pulse *pulseOne;
     Pulse *pulseTwo;
+    Triangle *tri;
+    Noise *noise;
 
     std::array<double, 31> pulseMixTable;
     std::array<double, 203> tndTable;
@@ -120,12 +189,11 @@ struct Mixer {
 };
 
 
-//Looking at mixer formula suggests to me that the final output is applied to all channels as the volume
-//Will implement as that for now but it doesn't seem right having all channels play at the same volume
+//The waveforms need to oscillate between 0 and 1 exclusively, the pulse waves don't do this currently 
 void audio_callback(void *user_data, uint8_t *raw_buffer, int bytes) {
     float *buffer = (float*)raw_buffer;
     Mixer *output = (Mixer *)user_data;
-    float freq = round(1789773 / (16 * (output->pulseOne->pulseSweep->truePeriod + 1))) / 2.0f; //Provided sweep is disabled
+    float freq = round(1789773 / (16 * (output->pulseOne->pulseSweep->truePeriod + 1))) / 2.0f;
     float period = floor((1.0f / freq) * SAMPLE_RATE); //number of data points in a period
     float negate;
     float transform;
@@ -135,6 +203,7 @@ void audio_callback(void *user_data, uint8_t *raw_buffer, int bytes) {
         return (2.0f * (2.0f*floor(freq*t) - floor(2.0f*freq*t) + 1));
     };
 
+    //Consider putting negate and transform in Pulse structs
     switch (output->pulseOne->dutyCycle) {
         case 0:
             negate = -1;
@@ -156,17 +225,16 @@ void audio_callback(void *user_data, uint8_t *raw_buffer, int bytes) {
 
     for(int i = 0; i < bytes/4; i++, g_sampleNum++)
     {
-        double alter = negate*(pulseWave((double)(g_sampleNum+transform) / (double)SAMPLE_RATE, freq));
-        //std::cout << alter << '\n';
-        //g_sampleNum %= SAMPLE_RATE;
-        //double time = (double)g_sampleNum / (double)SAMPLE_RATE;
-        //buffer[i] = 2.0f * (2.0f*floor(freq*time) - floor(2.0f*freq*time)) + 1; //Plays a 2*freq hz square wave
+        /*double alter = negate*(pulseWave((double)(g_sampleNum+transform) / (double)SAMPLE_RATE, freq));
+        
         buffer[i] = pulseWave((double)g_sampleNum / (double)SAMPLE_RATE, freq) + alter;
         if (buffer[i] < 0)
             buffer[i] = 0;
         if (buffer[i] > 2)
             buffer[i] = 2;
-        buffer[i] *= vol;
+        buffer[i] *= vol;*/
+        buffer[i] = output->tri->getSample(g_sampleNum);
+        //std::cout << buffer[i] << '\n';
     }
 }
 
@@ -192,9 +260,19 @@ class APU {
             PulseTwo.pulseEnvelope = &PulseTwoEnv;
             PulseTwo.pulseSweep = &PulseTwoSwp;
 
+            TriChannel = {};
+
+            NoiseChannel = {};
+            NoiseEnv = {};
+            NoiseChannel.shiftReg = 1;
+            NoiseChannel.noiseEnvelope = &NoiseEnv;
+
             g_sampleNum = 0;
 
             AudioMixer.pulseOne = &PulseOne;
+            AudioMixer.pulseTwo = &PulseTwo;
+            AudioMixer.tri = &TriChannel;
+            AudioMixer.noise = &NoiseChannel;
 
             want.freq = SAMPLE_RATE; // number of samples per second
             want.format = AUDIO_F32SYS;
@@ -215,20 +293,25 @@ class APU {
         uint16_t ApuCycles;
         void Reg_Write(uint16_t reg, uint8_t data);
         void Channels_Out();
-        void PulseOne_Out();        
+        void Pulse_Out();        
         uint8_t Reg_Read();
 
     private:
         //Channel and component structs
         Mixer AudioMixer;
 
+        Pulse PulseOne;
         Envelope PulseOneEnv;
         SweepUnit PulseOneSwp;
-        Pulse PulseOne;
 
         Pulse PulseTwo;
         Envelope PulseTwoEnv;
         SweepUnit PulseTwoSwp;
+
+        Triangle TriChannel;
+
+        Noise NoiseChannel;
+        Envelope NoiseEnv;
 
         //Pulse 1 channel registers
         uint8_t Pulse1Control; //$4000
@@ -243,10 +326,14 @@ class APU {
         uint8_t Pulse2TimeHigh; //$4007
 
         //Triangle channel
-
+        uint8_t TriLinearCount; //$4008
+        uint8_t TriTimerLow; //$400A
+        uint8_t TriTimerHigh; //$400B
 
         //Noise channel
-
+        uint8_t NoiseControl; //$400C
+        uint8_t NoiseModePeriod; //$400E
+        uint8_t NoiseLength; //$400F
 
         //DMC 
 

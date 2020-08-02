@@ -52,6 +52,13 @@ struct Envelope {
             divider--;
         }
     }
+
+    double getVol() {
+        if (constVol)
+            return static_cast<double>(constVolLevel);
+        else
+            return static_cast<double>(decayLevel);
+    }
 };
 
 
@@ -98,16 +105,56 @@ struct SweepUnit {
 
 //sequence is not needed and the timer doesn't need to be decremented so can store the raw value here instead
 struct Pulse {
+    bool enabled;
     uint8_t lengthCount;
     uint16_t timer;
     uint8_t dutyCycle;
     uint8_t sequence;
     Envelope *pulseEnvelope;
     SweepUnit *pulseSweep;
+
+    double getSample() {
+        if (lengthCount == 0 || pulseSweep->silence)
+            return 0;
+
+        float freq = round(1789773 / (16 * (pulseSweep->truePeriod + 1))) / 2.0f;
+        float period = floor((1.0f / freq) * SAMPLE_RATE);
+        float alter;
+        float sample;
+
+        auto pulseWave = [](double t, double freq) {
+            return (2.0f*floor(freq*t) - floor(2.0f*freq*t) + 1);
+        };
+
+
+        switch (dutyCycle) {
+            case 0:
+                alter = (-1)*(pulseWave((double)(g_sampleNum + period / 8.0f) / (double)SAMPLE_RATE, freq));
+                break;
+            case 1:
+                alter = (-1)*(pulseWave((double)(g_sampleNum + period / 4.0f) / (double)SAMPLE_RATE, freq));
+                break;
+            case 2:
+                alter = 0;
+                break;
+            case 3:
+                alter = pulseWave((double)(g_sampleNum + period / 4.0f) / (double)SAMPLE_RATE, freq);
+                break;
+        }
+
+        sample = pulseWave((double)g_sampleNum / (double)SAMPLE_RATE, freq) + alter;
+        if (sample > 1)
+            sample = 1;
+        if (sample < 0)
+            sample = 0;
+        
+        return sample;
+    }
 };
 
 
 struct Triangle {
+    bool enabled;
     uint8_t sequencePos;
     uint8_t lengthCount;
     uint16_t timer;
@@ -129,24 +176,25 @@ struct Triangle {
         }
     }
 
-    //Not sure about muting parameters, go over wiki details again 
-    double getSample(long sampleNum) {
+    double getSample() {
         if (!(lengthCount) || !(linearCount) || timer < 2)
             return 0;
         else { 
             //amplitude 1, no dividing by 2 since the Triangle timer ticks at twice the Pulse timer rate
             //Formula has been slightly adjusted so that wave oscillates between 0 and 1
             float period = floor(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE) * 2;
-            return (2.0 / period * abs((sampleNum % (int)period) - period/2.0));
+            return (2.0 / period * abs((g_sampleNum % (int)period) - period/2.0));
         }
     }
 };
 
 
 struct Noise {
+    bool enabled;
     uint8_t lengthCount;
     uint16_t shiftReg;
     uint16_t timer;
+    uint16_t reload;
     bool mode;
     bool feedBack;
     Envelope *noiseEnvelope;
@@ -160,10 +208,18 @@ struct Noise {
     }
 
     double getSample() {
+        if (timer == 0) {
+            clock();
+            timer = reload;
+        } else {
+            timer--;
+        }
+        
         if (lengthCount == 0 || (shiftReg & 0x0001))
             return 0;
-        else
-            return 1;
+        else {
+            return noiseEnvelope->getVol() * static_cast<double>(feedBack);
+        }
     }
 };
 
@@ -189,51 +245,14 @@ struct Mixer {
 };
 
 
-//The waveforms need to oscillate between 0 and 1 exclusively, the pulse waves don't do this currently 
+//All waveforms oscillate between 0 and 1
 void audio_callback(void *user_data, uint8_t *raw_buffer, int bytes) {
     float *buffer = (float*)raw_buffer;
     Mixer *output = (Mixer *)user_data;
-    float freq = round(1789773 / (16 * (output->pulseOne->pulseSweep->truePeriod + 1))) / 2.0f;
-    float period = floor((1.0f / freq) * SAMPLE_RATE); //number of data points in a period
-    float negate;
-    float transform;
-    float vol = output->mixAudio();
-
-    auto pulseWave = [](double t, double freq) {
-        return (2.0f * (2.0f*floor(freq*t) - floor(2.0f*freq*t) + 1));
-    };
-
-    //Consider putting negate and transform in Pulse structs
-    switch (output->pulseOne->dutyCycle) {
-        case 0:
-            negate = -1;
-            transform = period / 8.0f;
-            break;
-        case 1:
-            negate = -1;
-            transform = period / 4.0f;
-            break;
-        case 2:
-            negate = 0;
-            transform = 0;
-            break;
-        case 3:
-            negate = 1;
-            transform = period / 4.0f;
-            break;
-    }
 
     for(int i = 0; i < bytes/4; i++, g_sampleNum++)
     {
-        /*double alter = negate*(pulseWave((double)(g_sampleNum+transform) / (double)SAMPLE_RATE, freq));
-        
-        buffer[i] = pulseWave((double)g_sampleNum / (double)SAMPLE_RATE, freq) + alter;
-        if (buffer[i] < 0)
-            buffer[i] = 0;
-        if (buffer[i] > 2)
-            buffer[i] = 2;
-        buffer[i] *= vol;*/
-        buffer[i] = output->tri->getSample(g_sampleNum);
+        buffer[i] = output->pulseOne->getSample();
         //std::cout << buffer[i] << '\n';
     }
 }

@@ -32,9 +32,7 @@ void APU::Channels_Out() {
 //This implementation doesn't actually operate on the timers, it just uses their values to determine the period
 //However, the noise channel produces one "random" bit per timer clock thus operating on it 
 void APU::Pulse_Out() {
-
     
-
     switch (ApuCycles) {
         case 3728:
             PulseOne.pulseEnvelope->clock();
@@ -59,7 +57,7 @@ void APU::Pulse_Out() {
             if ((TriChannel.lengthCount != 0) && !(TriLinearCount & 0x80)) {
                 TriChannel.lengthCount--;
             }
-
+            
             NoiseEnv.clock();
             if ((NoiseChannel.lengthCount != 0) && !(NoiseControl & 0x20)) {
                 NoiseChannel.lengthCount--;
@@ -140,6 +138,7 @@ void APU::Pulse_Out() {
 //storing the last written value, will see if this can be simplified later on by just storing values in the device structs
 void APU::Reg_Write(uint16_t reg, uint8_t data) {
     
+    //Only load a new length value if the channel is enabled
     switch (reg % 0x4000) {
         case 0:
             Pulse1Control = data;
@@ -164,7 +163,8 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             PulseOne.timer = PulseOneSwp.rawTimer = (Pulse1TimeLow | ((Pulse1TimeHigh & 0x07) << 8));
             PulseOneSwp.truePeriod = PulseOne.timer;
             PulseOneSwp.calculatePeriod();
-            PulseOne.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
+            if (PulseOne.enabled)
+                PulseOne.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
             PulseOneEnv.startFlag = true;
             break;
         case 4:
@@ -190,7 +190,8 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             PulseTwo.timer = PulseTwoSwp.rawTimer = (Pulse2TimeLow | ((Pulse2TimeHigh & 0x07) << 8));
             PulseTwoSwp.truePeriod = PulseTwo.timer;
             PulseTwoSwp.calculatePeriod();
-            PulseTwo.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
+            if (PulseTwo.enabled)
+                PulseTwo.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
             PulseTwoEnv.startFlag = true;
             break;
         case 8:
@@ -204,7 +205,8 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             break;
         case 0x0B:
             TriTimerHigh = data & 0x07;
-            TriChannel.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
+            if (TriChannel.enabled)
+                TriChannel.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
             TriChannel.timer = (TriTimerLow | ((TriTimerHigh & 0x07) << 8));
             TriChannel.counterReload = true;
             break;
@@ -218,21 +220,40 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             NoiseModePeriod = data;
             NoiseChannel.mode = data & 0x80;
             NoiseChannel.timer = NOISE_PERIOD[data & 0x0F];
+            NoiseChannel.reload = NoiseChannel.timer;
             break;
         case 0x0F:
             NoiseLength = (data & 0xF8) >> 3;
-            NoiseChannel.lengthCount = LENGTH_TABLE[(data & 0xF8) >> 3];
+            if (NoiseChannel.enabled)
+                NoiseChannel.lengthCount = LENGTH_TABLE[(data & 0xF8) >> 3];
             NoiseEnv.startFlag = true;
             break;
 
         case 0x15: //Enables or disables single channels
             ControlStatus = data;
-            if (!(data & 0x01))
+            if (!(data & 0x01)) {
                 PulseOne.lengthCount = 0;
-            if (!(data & 0x02))
+                PulseOne.enabled = false;
+            } else
+                PulseOne.enabled = true;
+            
+            if (!(data & 0x02)) {
                 PulseTwo.lengthCount = 0;
-            if (!(data & 0x04))
+                PulseTwo.enabled = false;
+            } else
+                PulseTwo.enabled = true;
+
+            if (!(data & 0x04)) {
                 TriChannel.lengthCount = 0;
+                TriChannel.enabled = false;
+            } else
+                TriChannel.enabled = true;
+
+            if (!(data & 0x08)) {
+                NoiseChannel.lengthCount = 0;
+                NoiseChannel.enabled = false;
+            } else
+                NoiseChannel.enabled = true;
             break;
 
         case 0x17: //timer is also reset?
@@ -246,6 +267,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
                 PulseTwo.pulseEnvelope->clock();
                 PulseTwo.pulseSweep->clock();
                 TriChannel.clock();
+                NoiseEnv.clock();
             }
             break;
     }
@@ -269,19 +291,23 @@ int main(int argc, char *argv[]) {
     APU A;
    
     A.Reg_Write(0x4000, 0x30);
-    A.Reg_Write(0x4001, 0xF7);
+    A.Reg_Write(0x4001, 0x00);
     A.Reg_Write(0x4002, 0x00);
     A.Reg_Write(0x4003, 0x00);
     A.Reg_Write(0x4015, 0x0F);
     A.Reg_Write(0x4017, 0x40);
 
-    //A.Reg_Write(0x4002, 0xFD);
-    //A.Reg_Write(0x4003, 0x00);
-    //A.Reg_Write(0x4000, 0xBF);
-    A.Reg_Write(0x400A, 139);
-    A.Reg_Write(0x400B, 0xF8);
-    A.Reg_Write(0x4008, 0xCF);
-    A.Reg_Write(0x4017, 0xC0);
+    A.Reg_Write(0x4002, 0xFD);
+    A.Reg_Write(0x4003, 0x00);
+    A.Reg_Write(0x4000, 0xFF);
+    //A.Reg_Write(0x400A, 139);
+    //A.Reg_Write(0x400B, 0xF8);
+    //A.Reg_Write(0x4008, 0xCF);
+    //A.Reg_Write(0x4017, 0xC0);
+
+    //A.Reg_Write(0x400E, 0x04);
+    //A.Reg_Write(0x400F, 0x00);
+    //A.Reg_Write(0x400C, 0x3F);
 
     SDL_Thread *APU_Thread;
     APU_Thread = SDL_CreateThread(APU_Run, "APU", &A);
@@ -290,7 +316,7 @@ int main(int argc, char *argv[]) {
         std::this_thread::sleep_for(std::chrono::nanoseconds(558));
         A.CpuCycles++;
     }
-   
+
 
     /*auto pulseWave = [](double t, double freq) {
         return (2.0f * (2.0f*floor(freq*t) - floor(2.0f*freq*t) + 1));

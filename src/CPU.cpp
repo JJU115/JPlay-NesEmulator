@@ -52,8 +52,8 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
         return RAM[ADDR];
     }
 
-    //if (ADDR == 0x4015)
-      //  return A->Reg_Read();
+    if (ADDR == 0x4015)
+        return A->Reg_Read();
 
     //Controller probe
     if (ADDR == 0x4016) {
@@ -82,12 +82,15 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
     if (ADDR < 0x2000) {
         ADDR &= 0x07FF;
         RAM[ADDR] = VAL;
+        return;
     }
 
     //PPU registers - WRITE_BUF stores VAL in the lower 8 bits and a number representing the register to write to
     //in the 8th bit
-    if ((ADDR >= 0x2000) && (ADDR <= 0x3FFF))
+    if ((ADDR >= 0x2000) && (ADDR <= 0x3FFF)) {
         P->REG_WRITE(VAL, (ADDR & 0x2007) % 0x2000);
+        return;
+    }
         
 
     //CPU is suspended during OAM DMA transfer, 513 or 514 cycles, need some way to determine odd vs even cpu cycles
@@ -99,6 +102,7 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
             WAIT(2);
             P->REG_WRITE(FETCH((VAL << 8) + i), 4);
         }
+        return;
     }
 
     //Controller probe
@@ -107,12 +111,15 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
             probe = true;       
         else if (VAL == 0)
             probe = false;
+        return;
     }
 
 
     //APU registers
-    /*if ((ADDR >= 0x4000) && (ADDR <= 0x4017))
-        A->Reg_Write(ADDR, VAL);*/
+    if ((ADDR >= 0x4000) && (ADDR <= 0x4017)) {
+        A->Reg_Write(ADDR, VAL);
+        return;
+    }
 
 
     if ((ADDR >= 0x4020) && (ADDR <= 0xFFFF))
@@ -126,7 +133,9 @@ void CPU::WAIT(uint8_t N) {
     while (pause)
         std::this_thread::yield();
     
+    //APU waiting here!!!
     while (N-- > 0) {
+        A->CpuCycles++;
         while (P->cycleCount < 3)
             std::this_thread::yield();
         P->cycleCount -= 3;
@@ -195,8 +204,13 @@ void CPU::RUN() {
         } else if (P->GEN_NMI) {
             P->GEN_NMI = 0;
             IRQ_NMI(0xFFFA);
-        } else if (I && !BRK && !(STAT & 0x04))
+        } else if (I && !BRK && !(STAT & 0x04)) {
             IRQ_NMI(0xFFFE);
+        } else if (A->FireIRQ) {
+            IRQ_NMI(0xFFFE);
+            A->FireIRQ = false;
+        }
+
 
         CODE = FETCH(PROG_CNT++);
         cycleCount = 1;

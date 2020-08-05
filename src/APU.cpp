@@ -1,7 +1,20 @@
 #include <iostream>
 #include "APU.hpp"
 
-int APU_Run(void* data);
+//int APU_Run(void* data);
+long g_sampleNum;
+
+void audio_callback(void *user_data, uint8_t *raw_buffer, int bytes) {
+    float *buffer = (float*)raw_buffer;
+    Mixer *output = (Mixer *)user_data;
+    
+    //Can call individual channel sample output functions but using the mixer function doesn't work yet
+    for(int i = 0; i < bytes/4; i++, g_sampleNum++)
+    {
+        buffer[i] = output->pulseOne->getSample(g_sampleNum);
+        //std::cout << buffer[i] << '\n';
+    }
+}
 
 
 //Pulse channel sequence lookup - These are based on the output waveform values
@@ -13,15 +26,17 @@ uint8_t SequenceLookup[4] = {0x40, 0x60, 0x78, 0x9F};
 void APU::Channels_Out() {
     g_sampleNum = 0;
     want.callback = audio_callback;
-    std::cout << "channel out\n";
+    SDL_AudioSpec have;
+    SDL_OpenAudio(&want, &have);
     SDL_PauseAudio(0);
+    std::cout << "channel out\n";
     while (true) {
         while (CpuCycles < 2)
             std::this_thread::yield();
 
         ApuCycles++; //% based on 4/5 step sequence
         ApuCycles %= (FrameCount & 0x80) ? 18641 : 14915;
-
+        
         Pulse_Out();
         CpuCycles -=2;
     }
@@ -73,8 +88,8 @@ void APU::Pulse_Out() {
 
         case 14914: //If 4-step
             if (!(FrameCount & 0xC0)) {
-                FrameInterrupt = true;
-                //Generate an IRQ
+                FrameInterrupt = true; //Fire IRQ
+                FireIRQ = true;
             }
             break;
 
@@ -102,8 +117,8 @@ void APU::Pulse_Out() {
             }
 
             if (!(FrameCount & 0xC0)) {
-                FrameInterrupt = true;
-                //Generate an IRQ
+                FrameInterrupt = true; //Fire IRQ
+                FireIRQ = true;
             }
             break;
 
@@ -276,14 +291,25 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
 
 //Can only read $4015 but read is influenced by channel length counters
 uint8_t APU::Reg_Read() {
+    uint8_t status = FrameInterrupt << 6;
     FrameInterrupt = false;
-    return ControlStatus;
+
+    if (PulseOne.lengthCount > 0)
+        status |= 1;
+    if (PulseTwo.lengthCount > 0)
+        status |= 2;
+    if (TriChannel.lengthCount > 0)
+        status |= 4;
+    if (NoiseChannel.lengthCount > 0)
+        status |= 8;
+
+    return status;
 }
 
 
 
 //main will do the work of the CPU until APU is working
-int main(int argc, char *argv[]) {
+/*int main(int argc, char *argv[]) {
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0)
         std::cout << "Error initializing\n";
@@ -294,16 +320,26 @@ int main(int argc, char *argv[]) {
     A.Reg_Write(0x4001, 0x00);
     A.Reg_Write(0x4002, 0x00);
     A.Reg_Write(0x4003, 0x00);
+    A.Reg_Write(0x4004, 0x30);
+    A.Reg_Write(0x4005, 0x00);
+    A.Reg_Write(0x4006, 0x00);
+    A.Reg_Write(0x4007, 0x00);
+
+
     A.Reg_Write(0x4015, 0x0F);
     A.Reg_Write(0x4017, 0x40);
 
     A.Reg_Write(0x4002, 0xFD);
     A.Reg_Write(0x4003, 0x00);
-    A.Reg_Write(0x4000, 0xFF);
-    //A.Reg_Write(0x400A, 139);
-    //A.Reg_Write(0x400B, 0xF8);
-    //A.Reg_Write(0x4008, 0xCF);
-    //A.Reg_Write(0x4017, 0xC0);
+    A.Reg_Write(0x4000, 0xBF);
+    //A.Reg_Write(0x4006, 0xFD);
+    //A.Reg_Write(0x4007, 0x00);
+    //A.Reg_Write(0x4004, 0xFF);
+
+    A.Reg_Write(0x400A, 139);
+    A.Reg_Write(0x400B, 0xF8);
+    A.Reg_Write(0x4008, 0xCF);
+    A.Reg_Write(0x4017, 0xC0);
 
     //A.Reg_Write(0x400E, 0x04);
     //A.Reg_Write(0x400F, 0x00);
@@ -333,7 +369,7 @@ int main(int argc, char *argv[]) {
         float out = (2.0 / period * abs((g_sampleNum % (int)period) - period/2.0));
         std::cout << out << '\n';
         
-    }*/
+    }
 
 
     return 0;
@@ -346,4 +382,4 @@ int APU_Run(void* data) {
     ((APU* )data)->Channels_Out();
 
     return 0;
-}
+}*/

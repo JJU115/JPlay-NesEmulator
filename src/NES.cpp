@@ -6,26 +6,28 @@
 #include <thread>
 
 bool pause;
-bool log;
+bool Gamelog;
 SDL_cond* mainPPUCond;
 SDL_mutex* mainThreadMutex;
 
 int CPU_Run(void* data);
 int PPU_Run(void* data);
+int APU_Run(void* data);
  
 int main(int argc, char *argv[]) {
     Cartridge C;
+    APU RICOH_2A03;
     PPU RICOH_2C02(C);
-    CPU MOS_6502(C, RICOH_2C02);
+    CPU MOS_6502(C, RICOH_2C02, RICOH_2A03);
     Display Screen;
     SDL_Event evt;
     bool quit = false;
     pause = false;
-    log = false;
+    Gamelog = false;
 
     SDL_Thread* PPU_Thread;
     SDL_Thread* CPU_Thread;
-    //SDL_Thread* APU_Thread;
+    SDL_Thread* APU_Thread;
     mainThreadMutex = SDL_CreateMutex();
     mainPPUCond = SDL_CreateCond();
     
@@ -44,20 +46,21 @@ int main(int argc, char *argv[]) {
     //Start the threads
     CPU_Thread = SDL_CreateThread(CPU_Run, "CPU", &MOS_6502);
     PPU_Thread = SDL_CreateThread(PPU_Run, "PPU", &RICOH_2C02);
-    //APU_Thread = SDL_CreateThread(APU_Run, "APU", &RICOH_2A03);
+    APU_Thread = SDL_CreateThread(APU_Run, "APU", &RICOH_2A03);
     SDL_DetachThread(CPU_Thread);
     SDL_DetachThread(PPU_Thread);
-    //SDL_DetachThread(APU_Thread);
+    SDL_DetachThread(APU_Thread);
 
     while (!quit) {
         frameStart = std::chrono::high_resolution_clock::now();
-
+        
         //Wait on PPU
-        SDL_CondWait(mainPPUCond, mainThreadMutex);
+        if (SDL_CondWait(mainPPUCond, mainThreadMutex) < 0)
+            std::cout << "Error: " << SDL_GetError();
         
         //Draw frame
         Screen.RENDER_FRAME(RICOH_2C02.framePixels);
-         
+    
         //Check for events
         if(SDL_PollEvent(&evt)) {
             if (evt.type == SDL_QUIT)
@@ -68,7 +71,7 @@ int main(int argc, char *argv[]) {
                         pause = true;
                         break;
                     case SDLK_l:
-                        log = true;
+                        Gamelog = true;
                         break;
                 }
 
@@ -78,7 +81,7 @@ int main(int argc, char *argv[]) {
                             if (evt.key.keysym.sym == SDLK_p)
                                 pause = false;
                             else if (evt.key.keysym.sym == SDLK_l)
-                                log = false;
+                                Gamelog = false;
                         }
                     }
                     SDL_Delay(500);
@@ -109,6 +112,14 @@ int CPU_Run(void* data) {
 int PPU_Run(void* data) {
     
     ((PPU* )data)->GENERATE_SIGNAL();
+
+    return 0;
+}
+
+
+int APU_Run(void* data) {
+    
+    ((APU* )data)->Channels_Out();
 
     return 0;
 }

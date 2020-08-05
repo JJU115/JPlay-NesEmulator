@@ -7,6 +7,7 @@
 #include <array>
 #include <SDL.h>
 #include <SDL_keyboard.h>
+#include <typeinfo>
 
 //Class data members: Upper camel case
 //Class functions: Uppercase underscore separated
@@ -14,7 +15,6 @@
 //Global vars: 'g_' preceded lower camel case
 //Global constants: '_' separated capitals
 const int SAMPLE_RATE = 44100;
-long g_sampleNum;
 
 const std::array<uint8_t, 32> LENGTH_TABLE = {10, 254, 20, 2, 40, 4, 80, 6,
                                                 160, 8, 60, 10, 14, 12, 26, 14,
@@ -24,6 +24,7 @@ const std::array<uint8_t, 32> LENGTH_TABLE = {10, 254, 20, 2, 40, 4, 80, 6,
 const std::array<uint16_t, 16> NOISE_PERIOD = {4, 8, 16, 32, 64,
                                                 96, 128, 160, 202, 254,
                                                 380, 508, 762, 1016, 2034, 4068};  
+
 
 //All these structs may be restructured with different data members to reuduce # of calulations
 //in callback, for example instead of giving the entire control register to the envelope have loop flag, constant vol flag,
@@ -103,7 +104,7 @@ struct SweepUnit {
     }
 }; 
 
-//sequence is not needed and the timer doesn't need to be decremented so can store the raw value here instead
+
 struct Pulse {
     bool enabled;
     uint8_t lengthCount;
@@ -113,7 +114,7 @@ struct Pulse {
     Envelope *pulseEnvelope;
     SweepUnit *pulseSweep;
 
-    double getSample() {
+    double getSample(long sampleNum) {
         if (lengthCount == 0 || pulseSweep->silence)
             return 0;
 
@@ -129,26 +130,26 @@ struct Pulse {
 
         switch (dutyCycle) {
             case 0:
-                alter = (-1)*(pulseWave((double)(g_sampleNum + period / 8.0f) / (double)SAMPLE_RATE, freq));
+                alter = (-1)*(pulseWave((double)(sampleNum + period / 8.0f) / (double)SAMPLE_RATE, freq));
                 break;
             case 1:
-                alter = (-1)*(pulseWave((double)(g_sampleNum + period / 4.0f) / (double)SAMPLE_RATE, freq));
+                alter = (-1)*(pulseWave((double)(sampleNum + period / 4.0f) / (double)SAMPLE_RATE, freq));
                 break;
             case 2:
                 alter = 0;
                 break;
             case 3:
-                alter = pulseWave((double)(g_sampleNum + period / 4.0f) / (double)SAMPLE_RATE, freq);
+                alter = pulseWave((double)(sampleNum + period / 4.0f) / (double)SAMPLE_RATE, freq);
                 break;
         }
 
-        sample = pulseWave((double)g_sampleNum / (double)SAMPLE_RATE, freq) + alter;
+        sample = pulseWave((double)sampleNum / (double)SAMPLE_RATE, freq) + alter;
         if (sample > 1)
             sample = 1;
         if (sample < 0)
             sample = 0;
-        
-        return sample;
+           
+        return static_cast<double>(sample * pulseEnvelope->getVol());
     }
 };
 
@@ -176,14 +177,18 @@ struct Triangle {
         }
     }
 
-    double getSample() {
+    //Might need to relook at this, the NES sends the values 15 -> 0 then 0 -> 15 as values but the 
+    //SDL audio sampling rate makes it difficult to send this discrete sequence without repeating a lot of values
+    //given the speed at which the APU clock is running resulting in bad audio. The triangle needs to change or
+    //the mixer can't strictly operate as nesdev says it should 
+    double getSample(long sampleNum) {
         if (!(lengthCount) || !(linearCount) || timer < 2)
             return 0;
         else { 
             //amplitude 1, no dividing by 2 since the Triangle timer ticks at twice the Pulse timer rate
             //Formula has been slightly adjusted so that wave oscillates between 0 and 1
             float period = floor(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE) * 2;
-            return (2.0 / period * abs((g_sampleNum % (int)period) - period/2.0));
+            return (2.0 / period * abs((sampleNum % (int)period) - period/2.0));
         }
     }
 };
@@ -218,13 +223,14 @@ struct Noise {
         if (lengthCount == 0 || (shiftReg & 0x0001))
             return 0;
         else {
-            return noiseEnvelope->getVol() * static_cast<double>(feedBack);
+            return static_cast<double>(feedBack * noiseEnvelope->getVol());
         }
     }
 };
 
 //The mix audio function has to take inputs from all channels and turn them into a single audio signal
-//Will probably put output function in each channel struct to reduce verbosity in the Mixer
+//The formula on given on nesdev may not be applicable, also still confused as to if there are multiple outputs
+//played at once or if they are combined somehow
 struct Mixer {
     Pulse *pulseOne;
     Pulse *pulseTwo;
@@ -233,29 +239,13 @@ struct Mixer {
 
     std::array<double, 31> pulseMixTable;
     std::array<double, 203> tndTable;
-    double mixAudio() {
-        //Pulse one
-        if (pulseOne->lengthCount == 0 || pulseOne->pulseSweep->silence)
-            return 0;
-        else if (pulseOne->pulseEnvelope->constVol)
-            return pulseMixTable[pulseOne->pulseEnvelope->constVolLevel];
-        else
-            return pulseMixTable[pulseOne->pulseEnvelope->decayLevel];
+    double mixAudio(long sampleNum) {
+        float pulseOut = pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)]; 
+        float tndOut = tndTable[3 * tri->getSample(sampleNum) + 2 * noise->getSample()];
+
+        return pulseOut + tndOut;
     }
 };
-
-
-//All waveforms oscillate between 0 and 1
-void audio_callback(void *user_data, uint8_t *raw_buffer, int bytes) {
-    float *buffer = (float*)raw_buffer;
-    Mixer *output = (Mixer *)user_data;
-
-    for(int i = 0; i < bytes/4; i++, g_sampleNum++)
-    {
-        buffer[i] = output->pulseOne->getSample();
-        //std::cout << buffer[i] << '\n';
-    }
-}
 
 
 class APU {
@@ -263,8 +253,10 @@ class APU {
     public:
         APU(): Pulse1Control(0), Pulse1Sweep(0), Pulse1TimeLow(0), Pulse1TimeHigh(0), 
                 Pulse2Control(0), Pulse2Sweep(0), Pulse2TimeLow(0), Pulse2TimeHigh(0),
-                ControlStatus(0), FrameCount(0), CpuCycles(0), ApuCycles(0), FrameInterrupt(false) {
-
+                TriLinearCount(0), TriTimerHigh(0), TriTimerLow(0), NoiseControl(0),
+                NoiseModePeriod(0), NoiseLength(0), ControlStatus(0), FrameCount(0),
+                CpuCycles(0), ApuCycles(0), FrameInterrupt(false), FireIRQ(false) {
+              
             AudioMixer = {};
             PulseOneEnv = {};
             PulseOneSwp = {};
@@ -286,8 +278,6 @@ class APU {
             NoiseChannel.shiftReg = 1;
             NoiseChannel.noiseEnvelope = &NoiseEnv;
 
-            g_sampleNum = 0;
-
             AudioMixer.pulseOne = &PulseOne;
             AudioMixer.pulseTwo = &PulseTwo;
             AudioMixer.tri = &TriChannel;
@@ -298,18 +288,16 @@ class APU {
             want.channels = 1; // only one channel
             want.samples = 1024; // buffer-size
             want.userdata = &AudioMixer;
-            want.callback = audio_callback;
 
             for (int i=0; i<31; i++)
-                AudioMixer.pulseMixTable[i] = 95.52 / (8128.0 / i + 100);
+                AudioMixer.pulseMixTable[i] = 95.52 / (8128.0 / (double)i + 100);
 
-            SDL_AudioSpec have;
-            SDL_OpenAudio(&want, &have);
         }
 
 
         uint8_t CpuCycles;
         uint16_t ApuCycles;
+        bool FireIRQ;
         void Reg_Write(uint16_t reg, uint8_t data);
         void Channels_Out();
         void Pulse_Out();        

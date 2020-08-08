@@ -11,26 +11,28 @@ void audio_callback(void *user_data, uint8_t *raw_buffer, int bytes) {
     //Can call individual channel sample output functions but using the mixer function doesn't work yet
     for(int i = 0; i < bytes/4; i++, g_sampleNum++)
     {
-        buffer[i] = output->pulseOne->getSample(g_sampleNum);
+        buffer[i] = output->mixAudio(g_sampleNum);
+        //buffer[i] = output->pulseOne->getSample(g_sampleNum);
+        //output->pulseOne->getSample(g_sampleNum) + output->pulseTwo->getSample(g_sampleNum);
         //std::cout << buffer[i] << '\n';
     }
 }
 
 
-//Pulse channel sequence lookup - These are based on the output waveform values
-//Lookup is: value & (0x80 >> sequence) where sequence counts 0 to 7 then loops 
-uint8_t SequenceLookup[4] = {0x40, 0x60, 0x78, 0x9F};
-
-
-//Function run on separate SDL thread
-void APU::Channels_Out() {
+void APU::Open_Audio() {
     g_sampleNum = 0;
     want.callback = audio_callback;
     SDL_AudioSpec have;
     SDL_OpenAudio(&want, &have);
+}
+
+
+//Function run on separate SDL thread
+void APU::Channels_Out() {
     SDL_PauseAudio(0);
-    std::cout << "channel out\n";
     while (true) {
+        //Many of the clocking operations actually happen in between APU cycles, i.e. at 3728.5 instead of 3728
+        //Setting the frame IRQ also does this once, 
         while (CpuCycles < 2)
             std::this_thread::yield();
 
@@ -88,20 +90,20 @@ void APU::Pulse_Out() {
 
         case 14914: //If 4-step
             if (!(FrameCount & 0xC0)) {
-                FrameInterrupt = true; //Fire IRQ
-                FireIRQ = true;
+                //FrameInterrupt = true; //Fire IRQ
+                //FireIRQ = true;
             }
             break;
 
         case 14915: //If 4-step
             if (!(FrameCount & 0x80)) {
                 PulseOne.pulseSweep->clock();
-                if ((PulseOne.lengthCount != 0) || !(Pulse1Control & 0x20)) {
+                if ((PulseOne.lengthCount != 0) && !(Pulse1Control & 0x20)) {
                     PulseOne.lengthCount--;
                 }
 
                 PulseTwo.pulseSweep->clock();
-                if ((PulseTwo.lengthCount != 0) || !(Pulse2Control & 0x20)) {
+                if ((PulseTwo.lengthCount != 0) && !(Pulse2Control & 0x20)) {
                     PulseTwo.lengthCount--;
                 }
 
@@ -130,7 +132,7 @@ void APU::Pulse_Out() {
                 }
 
                 PulseTwo.pulseSweep->clock();
-                if ((PulseTwo.lengthCount != 0) || !(Pulse2Control & 0x20)) {
+                if ((PulseTwo.lengthCount != 0) && !(Pulse2Control & 0x20)) {
                     PulseTwo.lengthCount--;
                 }
 
@@ -279,10 +281,24 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
                 //Generate half and quarter frame signals
                 PulseOne.pulseEnvelope->clock();
                 PulseOne.pulseSweep->clock();
+                if ((PulseOne.lengthCount != 0) && !(Pulse1Control & 0x20)) {
+                    PulseOne.lengthCount--;
+                }
                 PulseTwo.pulseEnvelope->clock();
                 PulseTwo.pulseSweep->clock();
+                if ((PulseTwo.lengthCount != 0) && !(Pulse2Control & 0x20)) {
+                    PulseTwo.lengthCount--;
+                }
+
                 TriChannel.clock();
+                if ((TriChannel.lengthCount != 0) && !(TriLinearCount & 0x80)) {
+                    TriChannel.lengthCount--;
+                }
+
                 NoiseEnv.clock();
+                if ((NoiseChannel.lengthCount != 0) && !(NoiseControl & 0x20)) {
+                    NoiseChannel.lengthCount--;
+                }
             }
             break;
     }
@@ -315,42 +331,129 @@ uint8_t APU::Reg_Read() {
         std::cout << "Error initializing\n";
 
     APU A;
+    long cyc = 0;
    
-    A.Reg_Write(0x4000, 0x30);
-    A.Reg_Write(0x4001, 0x00);
-    A.Reg_Write(0x4002, 0x00);
-    A.Reg_Write(0x4003, 0x00);
-    A.Reg_Write(0x4004, 0x30);
-    A.Reg_Write(0x4005, 0x00);
-    A.Reg_Write(0x4006, 0x00);
-    A.Reg_Write(0x4007, 0x00);
-
-
     A.Reg_Write(0x4015, 0x0F);
-    A.Reg_Write(0x4017, 0x40);
-
-    A.Reg_Write(0x4002, 0xFD);
-    A.Reg_Write(0x4003, 0x00);
-    A.Reg_Write(0x4000, 0xBF);
-    //A.Reg_Write(0x4006, 0xFD);
-    //A.Reg_Write(0x4007, 0x00);
-    //A.Reg_Write(0x4004, 0xFF);
-
-    A.Reg_Write(0x400A, 139);
-    A.Reg_Write(0x400B, 0xF8);
-    A.Reg_Write(0x4008, 0xCF);
     A.Reg_Write(0x4017, 0xC0);
 
-    //A.Reg_Write(0x400E, 0x04);
-    //A.Reg_Write(0x400F, 0x00);
-    //A.Reg_Write(0x400C, 0x3F);
+    
 
     SDL_Thread *APU_Thread;
     APU_Thread = SDL_CreateThread(APU_Run, "APU", &A);
     
+    //To emulate the start of DK music
     while (true) {
-        std::this_thread::sleep_for(std::chrono::nanoseconds(558));
+        SDL_Delay(0.01);
         A.CpuCycles++;
+        switch (++cyc) {
+            ////PULSE ONE
+            case 118316:
+                 A.Reg_Write(0x4000, 0x00);
+                break;
+            case 118320:
+                A.Reg_Write(0x4001, 0x7F);
+                break;
+            case 1279568:
+                A.Reg_Write(0x4002, 0x80);
+                break;
+            case 1279579:
+                A.Reg_Write(0x4003, 0x0A);
+                break;
+
+
+            case 1279616:
+                A.Reg_Write(0x4000, 0x06);
+                break;
+            case 1279620:
+                A.Reg_Write(0x4001, 0x7F);
+                break;
+            case 1666676:
+                A.Reg_Write(0x4002, 0xFC);
+                break;
+            case 1666687:
+                A.Reg_Write(0x4003, 0x09);
+                break;
+
+
+            case 1666724:
+                A.Reg_Write(0x4000, 0x06);
+                break;
+            case 1666728:
+                A.Reg_Write(0x4001, 0x7F);
+                break;
+            case 2053818:
+                A.Reg_Write(0x4002, 0x80);
+                break;
+            case 2053829:
+                A.Reg_Write(0x4003, 0x0A);
+                break;
+
+
+            case 2053866:
+                A.Reg_Write(0x4000, 0x06);
+                break;
+            case 2053870:
+                A.Reg_Write(0x4001, 0x7F);
+                break;
+            case 2441010:
+                A.Reg_Write(0x4002, 0xFC);
+                break;
+            case 2441021:
+                A.Reg_Write(0x4003, 0x09);
+                break;
+            
+            case 2441058:
+                A.Reg_Write(0x4000, 0x06);
+                break;
+            case 2441062:
+                A.Reg_Write(0x4001, 0x7F);
+                break;
+
+
+
+            //// PULSE TWO
+            case 118422:
+                 A.Reg_Write(0x4005, 0x7F);
+                break;
+            case 118439:
+                A.Reg_Write(0x4006, 0xAB);
+                break;
+            case 118450:
+                A.Reg_Write(0x4007, 0x09);
+                break;
+            case 118482:
+                A.Reg_Write(0x4004, 0x84);
+                break;
+
+            case 505288:
+                A.Reg_Write(0x4005, 0x7F);
+                break;
+            case 505305:
+                A.Reg_Write(0x4006, 0xAB);
+                break;
+            case 505316:
+                A.Reg_Write(0x4007, 0x09);
+                break;
+            case 505348:
+                A.Reg_Write(0x4004, 0x84);
+                break;
+
+            case 892434:
+                A.Reg_Write(0x4005, 0x7F);
+                break;
+            case 892451:
+                A.Reg_Write(0x4006, 0xFD);
+                break;
+            case 892462:
+                A.Reg_Write(0x4007, 0x08);
+                break;
+            case 892487:
+                A.Reg_Write(0x4004, 0x89);
+                break;
+
+
+
+        }
     }
 
 

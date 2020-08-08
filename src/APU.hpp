@@ -7,7 +7,6 @@
 #include <array>
 #include <SDL.h>
 #include <SDL_keyboard.h>
-#include <typeinfo>
 
 //Class data members: Upper camel case
 //Class functions: Uppercase underscore separated
@@ -44,10 +43,10 @@ struct Envelope {
             divider = constVolLevel;
         } else if (divider == 0) {
             divider = constVolLevel;
-            if ((decayLevel == 0) && loop) {
-                decayLevel = 15;
-            } else {
+            if (decayLevel != 0) {
                 decayLevel--;
+            } else if (loop) {
+                decayLevel = 15;
             }
         } else {
             divider--;
@@ -121,7 +120,7 @@ struct Pulse {
         float freq = round(1789773 / (16 * (pulseSweep->truePeriod + 1))) / 2.0f;
         float period = floor((1.0f / freq) * SAMPLE_RATE);
         float alter;
-        float sample;
+        double sample;
 
         auto pulseWave = [](double t, double freq) {
             return (2.0f*floor(freq*t) - floor(2.0f*freq*t) + 1);
@@ -144,12 +143,11 @@ struct Pulse {
         }
 
         sample = pulseWave((double)sampleNum / (double)SAMPLE_RATE, freq) + alter;
-        if (sample > 1)
-            sample = 1;
-        if (sample < 0)
-            sample = 0;
-           
-        return static_cast<double>(sample * pulseEnvelope->getVol());
+        if (sample < 0 || sample == 0)
+            return 0;
+        if (sample > 1 || sample == 1)
+            return pulseEnvelope->getVol();
+
     }
 };
 
@@ -240,16 +238,15 @@ struct Mixer {
     std::array<double, 31> pulseMixTable;
     std::array<double, 203> tndTable;
     double mixAudio(long sampleNum) {
-        float pulseOut = pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)]; 
-        float tndOut = tndTable[3 * tri->getSample(sampleNum) + 2 * noise->getSample()];
+        double pulseOut = pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)]; 
+        //float tndOut = tndTable[3 * tri->getSample(sampleNum) + 2 * noise->getSample()];
 
-        return pulseOut + tndOut;
+        return pulseOut;
     }
 };
 
 
 class APU {
-    friend class CPU;
     public:
         APU(): Pulse1Control(0), Pulse1Sweep(0), Pulse1TimeLow(0), Pulse1TimeHigh(0), 
                 Pulse2Control(0), Pulse2Sweep(0), Pulse2TimeLow(0), Pulse2TimeHigh(0),
@@ -285,22 +282,25 @@ class APU {
 
             want.freq = SAMPLE_RATE; // number of samples per second
             want.format = AUDIO_F32SYS;
-            want.channels = 1; // only one channel
-            want.samples = 1024; // buffer-size
+            want.channels = 1; // Trying 2
+            want.samples = 2048; // buffer-size
             want.userdata = &AudioMixer;
 
             for (int i=0; i<31; i++)
                 AudioMixer.pulseMixTable[i] = 95.52 / (8128.0 / (double)i + 100);
+             
 
+            Open_Audio();
         }
 
 
-        uint8_t CpuCycles;
+        long CpuCycles;
         uint16_t ApuCycles;
         bool FireIRQ;
         void Reg_Write(uint16_t reg, uint8_t data);
         void Channels_Out();
-        void Pulse_Out();        
+        void Pulse_Out();
+        void Open_Audio();        
         uint8_t Reg_Read();
 
     private:

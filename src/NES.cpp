@@ -44,12 +44,12 @@ int main(int argc, char *argv[]) {
     auto frameStart = std::chrono::high_resolution_clock::now();
 
     //Start the threads
-    CPU_Thread = SDL_CreateThread(CPU_Run, "CPU", &MOS_6502);
-    PPU_Thread = SDL_CreateThread(PPU_Run, "PPU", &RICOH_2C02);
     APU_Thread = SDL_CreateThread(APU_Run, "APU", &RICOH_2A03);
-    SDL_DetachThread(CPU_Thread);
-    SDL_DetachThread(PPU_Thread);
+    PPU_Thread = SDL_CreateThread(PPU_Run, "PPU", &RICOH_2C02);
+    CPU_Thread = SDL_CreateThread(CPU_Run, "CPU", &MOS_6502);
     SDL_DetachThread(APU_Thread);
+    SDL_DetachThread(PPU_Thread);
+    SDL_DetachThread(CPU_Thread);
 
     while (!quit) {
         frameStart = std::chrono::high_resolution_clock::now();

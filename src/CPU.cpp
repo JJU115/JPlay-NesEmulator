@@ -47,8 +47,8 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
         return P->REG_READ((ADDR & 0x2007) % 0x2000);
 
     if (ADDR < 0x2000) {
-        if (SAVE)
-            LOG << std::hex << int(RAM[ADDR]) << " ";
+        //if (SAVE)
+            //LOG << std::hex << int(RAM[ADDR]) << " ";
         return RAM[ADDR];
     }
 
@@ -133,12 +133,11 @@ void CPU::WAIT(uint8_t N) {
     while (pause)
         std::this_thread::yield();
     
-    //APU waiting here!!!
     while (N-- > 0) {
-        A->CpuCycles++;
         while (P->cycleCount < 3)
             std::this_thread::yield();
         P->cycleCount -= 3;
+        A->CpuCycles++;
     }
 
     if (CTRL_IGNORE < 30000)
@@ -179,6 +178,7 @@ void CPU::RUN() {
     uint8_t cycleCount;
     const uint8_t *keyboard = SDL_GetKeyboardState(NULL);
     //Enable logging
+    std::cout << "CPU start\n";
     LOG.open("CPU_LOG.txt", std::ios::trunc | std::ios::out);
     //CONTROL.open("NESTEST_LOG.txt");
     //B = new char[6];
@@ -197,7 +197,7 @@ void CPU::RUN() {
     
     //Main loop
     while (true) {
-        //LOG << "Interrupts - R: " << R << " NMI: " << int(P->GEN_NMI) << " I: " << I << " BRK: " << BRK << '\n';
+        //LOG << "Interrupts - R: " << R << " NMI: " << int(P->GEN_NMI) << " I: " << I << " BRK: " << BRK <<  " APU: " << A->FireIRQ << '\n';
         if (R) {
             RESET();
             R = false;
@@ -206,12 +206,12 @@ void CPU::RUN() {
             IRQ_NMI(0xFFFA);
         } else if (I && !BRK && !(STAT & 0x04)) {
             IRQ_NMI(0xFFFE);
-        } else if (A->FireIRQ) {
+        } else if (A->FireIRQ && !(STAT & 0x04)) {
             IRQ_NMI(0xFFFE);
             A->FireIRQ = false;
         }
 
-
+        //LOG << std::hex << PROG_CNT << ": ";
         CODE = FETCH(PROG_CNT++);
         cycleCount = 1;
         

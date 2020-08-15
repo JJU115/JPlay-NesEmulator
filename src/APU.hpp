@@ -13,7 +13,7 @@
 //Local vars: lower camel case
 //Global vars: 'g_' preceded lower camel case
 //Global constants: '_' separated capitals
-const int SAMPLE_RATE = 44100;
+const int SAMPLE_RATE = 44100; //44100
 
 const std::array<uint8_t, 32> LENGTH_TABLE = {10, 254, 20, 2, 40, 4, 80, 6,
                                                 160, 8, 60, 10, 14, 12, 26, 14,
@@ -23,6 +23,9 @@ const std::array<uint8_t, 32> LENGTH_TABLE = {10, 254, 20, 2, 40, 4, 80, 6,
 const std::array<uint16_t, 16> NOISE_PERIOD = {4, 8, 16, 32, 64,
                                                 96, 128, 160, 202, 254,
                                                 380, 508, 762, 1016, 2034, 4068};  
+
+const std::array<uint8_t, 32> TRIANGLE_WAVE = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+                                                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
 
 
 //All these structs may be restructured with different data members to reuduce # of calulations
@@ -113,6 +116,7 @@ struct Pulse {
     Envelope *pulseEnvelope;
     SweepUnit *pulseSweep;
 
+
     double getSample(long sampleNum) {
         if (lengthCount == 0 || pulseSweep->silence)
             return 0;
@@ -143,9 +147,9 @@ struct Pulse {
         }
 
         sample = pulseWave((double)sampleNum / (double)SAMPLE_RATE, freq) + alter;
-        if (sample < 0 || sample == 0)
+        if (sample <= 0)
             return 0;
-        if (sample > 1 || sample == 1)
+        if (sample >= 1)
             return pulseEnvelope->getVol();
 
     }
@@ -161,6 +165,15 @@ struct Triangle {
     uint8_t linearCount;
     bool controlFlag;
     bool counterReload;
+    double lastSamp;
+    long currentSamp;
+    uint16_t timerReload;
+    
+    //Experimental
+    uint8_t start;
+    uint8_t end;
+    uint8_t extra;
+    double base;
 
 
     void clock() {
@@ -179,14 +192,37 @@ struct Triangle {
     //SDL audio sampling rate makes it difficult to send this discrete sequence without repeating a lot of values
     //given the speed at which the APU clock is running resulting in bad audio. The triangle needs to change or
     //the mixer can't strictly operate as nesdev says it should 
-    double getSample(long sampleNum) {
+    double getSample() {
         if (!(lengthCount) || !(linearCount) || timer < 2)
-            return 0;
+            return lastSamp;
         else { 
             //amplitude 1, no dividing by 2 since the Triangle timer ticks at twice the Pulse timer rate
-            //Formula has been slightly adjusted so that wave oscillates between 0 and 1
-            float period = floor(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE) * 2;
-            return (2.0 / period * abs((sampleNum % (int)period) - period/2.0));
+            //Formula has been slightly adjusted so that wave oscillates between 0 and 1           
+            float period = floor(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE) * 2; //# of samples
+            //lastSamp = (2.0 / period * abs((currentSamp++ % (int)period) - period/2.0)); 
+            //return lastSamp;
+            //return (sequencePos < 15) ? (15 - sequencePos) : (sequencePos - 15);
+
+            //Experimental - Gives huge improvement in sound quality but increases calculations alot as well
+            base = period / 32;
+            extra = round((base - floor(base)) * 32); //extra values to distribute
+            start = (extra % 2 == 0) ? 15-(extra/2) : 16-(extra/2);
+            end = 15+(extra/2);
+            if (sequencePos >= start && sequencePos <= end) {
+                if (currentSamp % (int)floor(base+1) == 0) {
+                    sequencePos++;
+                    sequencePos %= 32;
+                }
+            } else {
+                if (currentSamp % (int)floor(base) == 0) {
+                    sequencePos++;
+                    sequencePos %= 32;
+                }
+            }
+            //std::cout << int(sequencePos) << " ";
+            currentSamp++;
+            lastSamp = TRIANGLE_WAVE[sequencePos];
+            return lastSamp;
         }
     }
 };
@@ -239,9 +275,9 @@ struct Mixer {
     std::array<double, 203> tndTable;
     double mixAudio(long sampleNum) {
         double pulseOut = pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)]; 
-        //float tndOut = tndTable[3 * tri->getSample(sampleNum) + 2 * noise->getSample()];
-
-        return pulseOut;
+        double tndOut = tndTable[3 * tri->getSample()];
+        //std::cout << tri->getSample();
+        return pulseOut + tndOut;
     }
 };
 
@@ -252,7 +288,7 @@ class APU {
                 Pulse2Control(0), Pulse2Sweep(0), Pulse2TimeLow(0), Pulse2TimeHigh(0),
                 TriLinearCount(0), TriTimerHigh(0), TriTimerLow(0), NoiseControl(0),
                 NoiseModePeriod(0), NoiseLength(0), ControlStatus(0), FrameCount(0),
-                CpuCycles(0), ApuCycles(0), FrameInterrupt(false), FireIRQ(false) {
+                CpuCycles(0), ApuCycles(0), Jitter(0), JitterWrite(false), FrameInterrupt(false), FireIRQ(false) {
               
             AudioMixer = {};
             PulseOneEnv = {};
@@ -269,6 +305,7 @@ class APU {
             PulseTwo.pulseSweep = &PulseTwoSwp;
 
             TriChannel = {};
+            TriChannel.lastSamp = 15;
 
             NoiseChannel = {};
             NoiseEnv = {};
@@ -288,6 +325,9 @@ class APU {
 
             for (int i=0; i<31; i++)
                 AudioMixer.pulseMixTable[i] = 95.52 / (8128.0 / (double)i + 100);
+                
+            for (int i=0; i<203; i++)
+                AudioMixer.tndTable[i] = 163.67 / (24329.0 / ((double)i + 100));
              
 
             Open_Audio();
@@ -296,13 +336,15 @@ class APU {
 
         long CpuCycles;
         uint16_t ApuCycles;
+        uint8_t Jitter;
+        bool JitterWrite;
         bool FireIRQ;
         void Reg_Write(uint16_t reg, uint8_t data);
         void Channels_Out();
         void Pulse_Out();
         void Open_Audio();        
         uint8_t Reg_Read();
-
+        Triangle TriChannel;
     private:
         //Channel and component structs
         Mixer AudioMixer;
@@ -315,7 +357,7 @@ class APU {
         Envelope PulseTwoEnv;
         SweepUnit PulseTwoSwp;
 
-        Triangle TriChannel;
+        //Triangle TriChannel;
 
         Noise NoiseChannel;
         Envelope NoiseEnv;

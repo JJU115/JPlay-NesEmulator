@@ -137,9 +137,9 @@ void CPU::WAIT(uint8_t N) {
         while (P->cycleCount < 3)
             std::this_thread::yield();
         P->cycleCount -= 3;
-        A->CpuCycles++;
-    }
-
+        A->Pulse_Out(); //Calling pulse out here gives better performance than having APU run itself
+    }                   //Could eliminate APU thread altogether. Also, consider only calling pulse_out if cycle count  
+                        //equals one of the step values in the APU frame counter
     if (CTRL_IGNORE < 30000)
         CTRL_IGNORE++;
 }

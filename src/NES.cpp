@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
         //Wait if needed
         frameEnd = std::chrono::high_resolution_clock::now();
         elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
-        std::cout << "FPS: " << (1000/elapsedTime) << '\n';
+        //std::cout << "FPS: " << (1000/elapsedTime) << '\n';
         if (elapsedTime < 16)
             std::this_thread::sleep_for(std::chrono::milliseconds(16 - elapsedTime));
     }

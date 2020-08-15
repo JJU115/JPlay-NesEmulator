@@ -26,8 +26,158 @@ void APU::Open_Audio() {
     SDL_OpenAudio(&want, &have);
 }
 
+/*
+void APU::Channels_Out() {
+    SDL_PauseAudio(0);
+    while (true) {
+        //Many of the clocking operations actually happen in between APU cycles, i.e. at 3728.5 instead of 3728
+        //Setting the frame IRQ also does this once, 
+        while (!CpuCycle)
+            std::this_thread::yield();
+
+        CpuCycle = false;
+        CpuCycles++; //% based on 4/5 step sequence
+        CpuCycles %= (FrameCount & 0x80) ? 37282 : 29830;
+        
+        Pulse_Out();
+        //CpuCycles -=2;
+    }
+
+}*/
+
+
+//Alternative Pulse out method which is called directly by the cpu every one of its cycles
+void APU::Pulse_Out() {
+    switch (++CpuCycles) {
+        case 7457:
+            PulseOne.pulseEnvelope->clock();
+            PulseTwo.pulseEnvelope->clock();
+            NoiseEnv.clock();
+            TriChannel.clock();
+            break;
+        case 14913:
+            PulseOne.pulseEnvelope->clock();
+            PulseOne.pulseSweep->clock();
+            if ((PulseOne.lengthCount != 0) && !(Pulse1Control & 0x20)) {
+                PulseOne.lengthCount--;
+            }
+
+            PulseTwo.pulseEnvelope->clock();
+            PulseTwo.pulseSweep->clock();
+            if ((PulseTwo.lengthCount != 0) && !(Pulse2Control & 0x20)) {
+                PulseTwo.lengthCount--;
+            }
+
+            TriChannel.clock();
+            if ((TriChannel.lengthCount != 0) && !(TriLinearCount & 0x80)) {
+                TriChannel.lengthCount--;
+            }
+            
+            NoiseEnv.clock();
+            if ((NoiseChannel.lengthCount != 0) && !(NoiseControl & 0x20)) {
+                NoiseChannel.lengthCount--;
+            }
+            break;
+
+        case 22371:
+            PulseOne.pulseEnvelope->clock();
+            PulseTwo.pulseEnvelope->clock();
+            TriChannel.clock();
+            NoiseEnv.clock();
+            break;
+
+        case 29828: //If 4-step
+            if (!(FrameCount & 0xC0)) {
+                FrameInterrupt = true; //Fire IRQ
+                FireIRQ = true;
+            }
+            break;
+
+        case 29829: //If 4-step
+            if (!(FrameCount & 0x80)) {
+                PulseOne.pulseEnvelope->clock();
+                PulseOne.pulseSweep->clock();
+                if ((PulseOne.lengthCount != 0) && !(Pulse1Control & 0x20)) {
+                    PulseOne.lengthCount--;
+                }
+
+                PulseTwo.pulseEnvelope->clock();
+                PulseTwo.pulseSweep->clock();
+                if ((PulseTwo.lengthCount != 0) && !(Pulse2Control & 0x20)) {
+                    PulseTwo.lengthCount--;
+                }
+
+                TriChannel.clock();
+                if ((TriChannel.lengthCount != 0) && !(TriLinearCount & 0x80)) {
+                    TriChannel.lengthCount--;
+                }
+
+                NoiseEnv.clock();
+                if ((NoiseChannel.lengthCount != 0) && !(NoiseControl & 0x20)) {
+                    NoiseChannel.lengthCount--;
+                }
+            }
+
+            if (!(FrameCount & 0xC0)) {
+                FrameInterrupt = true; //Fire IRQ
+                FireIRQ = true;
+            }
+            break;
+        
+        case 29830:
+            if (!(FrameCount & 0xC0)) {
+                FrameInterrupt = true; //Fire IRQ
+                FireIRQ = true;
+            }
+            break;
+
+        case 37281: //If 5-step
+            if (FrameCount & 0x80) {
+                PulseOne.pulseEnvelope->clock();
+                PulseOne.pulseSweep->clock();
+                if ((PulseOne.lengthCount != 0) && !(Pulse1Control & 0x20)) {
+                    PulseOne.lengthCount--;
+                }
+
+                PulseTwo.pulseEnvelope->clock();
+                PulseTwo.pulseSweep->clock();
+                if ((PulseTwo.lengthCount != 0) && !(Pulse2Control & 0x20)) {
+                    PulseTwo.lengthCount--;
+                }
+
+                TriChannel.clock();
+                if ((TriChannel.lengthCount != 0) && !(TriLinearCount & 0x80)) {
+                    TriChannel.lengthCount--;
+                }
+
+                NoiseEnv.clock();
+                if ((NoiseChannel.lengthCount != 0) && !(NoiseControl & 0x20)) {
+                    NoiseChannel.lengthCount--;
+                }
+            }
+            break;
+    }
+    CpuCycles %= (FrameCount & 0x80) ? 37282 : 29830;
+
+    
+    //Update the Triangle wave's timer here
+   /* if (TriChannel.timer == 0) {
+        TriChannel.timer = TriChannel.timerReload;
+        if (TriChannel.linearCount != 0 && TriChannel.lengthCount != 0)
+            TriChannel.sequencePos = ((TriChannel.sequencePos + 1) % 32);
+    } else {
+        TriChannel.timer--;
+    }*/
+}
+
+
+
+
+
 
 //Function run on separate SDL thread
+//A separate thread for the APU could be eliminated entirely as calling Pulse_out directly from the CPU wait function
+//seems to give better performance
 void APU::Channels_Out() {
     SDL_PauseAudio(0);
     while (true) {
@@ -39,8 +189,8 @@ void APU::Channels_Out() {
         ApuCycles++; //% based on 4/5 step sequence
         ApuCycles %= (FrameCount & 0x80) ? 18641 : 14915;
         
-        Pulse_Out();
-        CpuCycles -=2;
+        //Pulse_Out();
+        //CpuCycles -=2;
     }
 
 }
@@ -48,7 +198,7 @@ void APU::Channels_Out() {
 //Can include triangle channel clocking in here as well since only their timers tick at different rates
 //This implementation doesn't actually operate on the timers, it just uses their values to determine the period
 //However, the noise channel produces one "random" bit per timer clock thus operating on it 
-void APU::Pulse_Out() {
+/*void APU::Pulse_Out() {
     
     switch (ApuCycles) {
         case 3728:
@@ -149,7 +299,7 @@ void APU::Pulse_Out() {
             break;
     }
 
-}
+}*/
 
 //Since every register except $4015 is write only, it's probably unnecessary to have data members for each register
 //storing the last written value, will see if this can be simplified later on by just storing values in the device structs
@@ -219,12 +369,14 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
         case 0x0A:
             TriTimerLow = data;
             TriChannel.timer = (TriTimerLow | ((TriTimerHigh & 0x07) << 8));
+            TriChannel.timerReload = TriChannel.timer; //Added
             break;
         case 0x0B:
             TriTimerHigh = data & 0x07;
             if (TriChannel.enabled)
                 TriChannel.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
             TriChannel.timer = (TriTimerLow | ((TriTimerHigh & 0x07) << 8));
+            TriChannel.timerReload = TriChannel.timer; //Added
             TriChannel.counterReload = true;
             break;
         case 0x0C:
@@ -276,7 +428,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
         case 0x17: //timer is also reset?
             FrameCount = data;
             FrameInterrupt = (data & 0x40) ? false : FrameInterrupt;
-            ApuCycles = 0; //Passes for a frame counter reset?
+            CpuCycles = 0; //Passes for a frame counter reset?
             if (data & 0x80) {
                 //Generate half and quarter frame signals
                 PulseOne.pulseEnvelope->clock();
@@ -344,8 +496,8 @@ uint8_t APU::Reg_Read() {
     //To emulate the start of DK music
     while (true) {
         SDL_Delay(0.01);
-        A.CpuCycles++;
-        switch (++cyc) {
+        A.Pulse_Out();
+        switch (cyc++) {
             ////PULSE ONE
             case 118316:
                  A.Reg_Write(0x4000, 0x00);

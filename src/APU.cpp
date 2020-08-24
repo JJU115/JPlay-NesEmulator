@@ -370,6 +370,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             TriTimerLow = data;
             TriChannel.timer = (TriTimerLow | ((TriTimerHigh & 0x07) << 8));
             TriChannel.timerReload = TriChannel.timer; //Added
+            TriChannel.recalculate();
             break;
         case 0x0B:
             TriTimerHigh = data & 0x07;
@@ -378,6 +379,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             TriChannel.timer = (TriTimerLow | ((TriTimerHigh & 0x07) << 8));
             TriChannel.timerReload = TriChannel.timer; //Added
             TriChannel.counterReload = true;
+            TriChannel.recalculate();
             break;
         case 0x0C:
             NoiseControl = data;

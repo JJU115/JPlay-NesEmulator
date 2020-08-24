@@ -174,6 +174,7 @@ struct Triangle {
     uint8_t end;
     uint8_t extra;
     double base;
+    float period;
 
 
     void clock() {
@@ -188,6 +189,16 @@ struct Triangle {
         }
     }
 
+
+    void recalculate() {
+        period = round(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE * 2);
+        base = period / 32.0f;
+        extra = round((base - floor(base)) * 32); //extra values to distribute
+        start = (extra % 2 == 0) ? 15-(extra/2) : 16-(extra/2);
+        end = 15+(extra/2);
+        base = floor(base);
+    }
+
     //Might need to relook at this, the NES sends the values 15 -> 0 then 0 -> 15 as values but the 
     //SDL audio sampling rate makes it difficult to send this discrete sequence without repeating a lot of values
     //given the speed at which the APU clock is running resulting in bad audio. The triangle needs to change or
@@ -198,30 +209,30 @@ struct Triangle {
         else { 
             //amplitude 1, no dividing by 2 since the Triangle timer ticks at twice the Pulse timer rate
             //Formula has been slightly adjusted so that wave oscillates between 0 and 1           
-            float period = floor(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE) * 2; //# of samples
+            //period = round(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE * 2); //# of samples
             //lastSamp = (2.0 / period * abs((currentSamp++ % (int)period) - period/2.0)); 
             //return lastSamp;
             //return (sequencePos < 15) ? (15 - sequencePos) : (sequencePos - 15);
 
-            //Experimental - Gives huge improvement in sound quality but increases calculations alot as well
-            base = period / 32;
-            extra = round((base - floor(base)) * 32); //extra values to distribute
-            start = (extra % 2 == 0) ? 15-(extra/2) : 16-(extra/2);
-            end = 15+(extra/2);
-            if (sequencePos >= start && sequencePos <= end) {
-                if (currentSamp % (int)floor(base+1) == 0) {
-                    sequencePos++;
-                    sequencePos %= 32;
-                }
-            } else {
-                if (currentSamp % (int)floor(base) == 0) {
-                    sequencePos++;
-                    sequencePos %= 32;
-                }
+            base -= (base == 0) ? 0 : 1;
+            if (base == 0) {
+                sequencePos++;
+                sequencePos %= 32;
+                if (sequencePos >= start && sequencePos <= end)
+                    base = floor(period / 32.0f)+1;
+                else
+                    base = floor(period / 32.0f);
             }
+           
             //std::cout << int(sequencePos) << " ";
             currentSamp++;
+            
             lastSamp = TRIANGLE_WAVE[sequencePos];
+            /*if (extra >= base) {
+                sequencePos++;
+                sequencePos %= 32;
+                extra = 0;
+            }*/
             return lastSamp;
         }
     }

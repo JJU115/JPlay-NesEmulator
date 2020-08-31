@@ -26,6 +26,7 @@ void APU::Open_Audio() {
     SDL_OpenAudio(&want, &have);
 }
 
+
 /*
 void APU::Channels_Out() {
     SDL_PauseAudio(0);
@@ -158,7 +159,6 @@ void APU::Pulse_Out() {
             break;
     }
     CpuCycles %= (FrameCount & 0x80) ? 37282 : 29830;
-
     
     //Update the Triangle wave's timer here
    /* if (TriChannel.timer == 0) {
@@ -168,6 +168,11 @@ void APU::Pulse_Out() {
     } else {
         TriChannel.timer--;
     }*/
+
+    //Noise Channel clocking
+    //if (CpuCycles % 2 == 0)
+        //NoiseChannel.clock();
+    
 }
 
 

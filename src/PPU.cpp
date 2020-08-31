@@ -378,7 +378,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
         //nesdev says there's a delay in rendering and the 1st pixel is output only at cycle 4?
         //COL = FETCH(BGPIXEL); 
 
-        //Rather than call the render function each cycle, load a pixel into a texture each cycle then blit the full texture after the rendering cycles are done
+        //Three sequential accesses to system palette at the same index is inefficient, should modify so a single access to palette gives full color
         framePixels[(SLINE * 256) + TICK - 1] = ((SYSTEM_PAL[COL].R << 24) | (SYSTEM_PAL[COL].G << 16) | (SYSTEM_PAL[COL].B << 8) | 0xFF);
       
         //Shift registers once

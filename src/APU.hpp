@@ -13,7 +13,7 @@
 //Local vars: lower camel case
 //Global vars: 'g_' preceded lower camel case
 //Global constants: '_' separated capitals
-const int SAMPLE_RATE = 44100; //44100
+const int SAMPLE_RATE = 88200; //44100
 
 const std::array<uint8_t, 32> LENGTH_TABLE = {10, 254, 20, 2, 40, 4, 80, 6,
                                                 160, 8, 60, 10, 14, 12, 26, 14,
@@ -214,8 +214,7 @@ struct Triangle {
             //return lastSamp;
             //return (sequencePos < 15) ? (15 - sequencePos) : (sequencePos - 15);
 
-            base -= (base == 0) ? 0 : 1;
-            if (base == 0) {
+            if (--base <= 0) {
                 sequencePos++;
                 sequencePos %= 32;
                 if (sequencePos >= start && sequencePos <= end)
@@ -248,34 +247,38 @@ struct Noise {
     bool mode;
     bool feedBack;
     Envelope *noiseEnvelope;
-
+    double avg;
+    double out;
 
     void clock() {
         feedBack = (shiftReg & 0x0001) ^ ((mode) ? ((shiftReg & 0x0040) >> 6) : ((shiftReg & 0x0002) >> 1));
         shiftReg = shiftReg >> 1;
-        shiftReg &= 0xBFFF;
+        shiftReg &= 0x3FFF;
         shiftReg |= (feedBack << 14);
+        timer = reload;
     }
 
     double getSample() {
-        if (timer == 0) {
-            clock();
-            timer = reload;
-        } else {
-            timer--;
+        for (int j=0; j<20; j++) {
+            if (timer-- == 0) {
+                timer = reload;
+                clock();
+            }
+            avg += feedBack;
         }
-        
-        if (lengthCount == 0 || (shiftReg & 0x0001))
+        out = round(avg / 20.0f);
+        avg = 0;
+        if (lengthCount == 0 || shiftReg & 0x0001)
             return 0;
         else {
-            return static_cast<double>(feedBack * noiseEnvelope->getVol());
+            return static_cast<double>(out);
         }
     }
 };
 
 //The mix audio function has to take inputs from all channels and turn them into a single audio signal
-//The formula on given on nesdev may not be applicable, also still confused as to if there are multiple outputs
-//played at once or if they are combined somehow
+//Lookup tables with values specified by nesdev are used
+//Doing the noise channel separately for now since can't produce good enough noise with current model
 struct Mixer {
     Pulse *pulseOne;
     Pulse *pulseTwo;
@@ -286,9 +289,8 @@ struct Mixer {
     std::array<double, 203> tndTable;
     double mixAudio(long sampleNum) {
         double pulseOut = pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)]; 
-        double tndOut = tndTable[3 * tri->getSample()];
-        //std::cout << tri->getSample();
-        return pulseOut + tndOut;
+        double tndOut = tndTable[3 * tri->getSample()];// + 2*noise->getSample()];
+        return pulseOut + tndOut + noise->getSample();
     }
 };
 
@@ -340,7 +342,6 @@ class APU {
             for (int i=0; i<203; i++)
                 AudioMixer.tndTable[i] = 163.67 / (24329.0 / ((double)i + 100));
              
-
             Open_Audio();
         }
 
@@ -355,7 +356,7 @@ class APU {
         void Pulse_Out();
         void Open_Audio();        
         uint8_t Reg_Read();
-        Triangle TriChannel;
+    
     private:
         //Channel and component structs
         Mixer AudioMixer;
@@ -368,7 +369,7 @@ class APU {
         Envelope PulseTwoEnv;
         SweepUnit PulseTwoSwp;
 
-        //Triangle TriChannel;
+        Triangle TriChannel;
 
         Noise NoiseChannel;
         Envelope NoiseEnv;

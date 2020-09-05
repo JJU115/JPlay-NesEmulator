@@ -35,7 +35,7 @@ unsigned char CPU::STACK_POP() {
 
 
 //Fetch is called a lot by the CPU, needs to be as efficient as possible
-uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
+uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=true) {
     //LOG << "CPU read of " << std::hex << int(ADDR) << '\n';
     //Every 0x0800 bytes of 0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
     if (ADDR < 0x2000)
@@ -52,8 +52,10 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
         return RAM[ADDR];
     }
 
-    if (ADDR == 0x4015)
+    if (ADDR == 0x4015) {
+        //LOG << "Read: " << std::hex << ADDR << "=" << std::hex << int(A->Reg_Read()) << '\n';
         return A->Reg_Read();
+    }
 
     //Controller probe
     if (ADDR == 0x4016) {
@@ -64,7 +66,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=false) {
 
 
     if ((ADDR >= 0x4020) && (ADDR <= 0xFFFF)) {
-       /*if (SAVE) {
+      /* if (SAVE) {
             uint8_t L = ROM->CPU_ACCESS(ADDR);
             LOG << std::hex << int(L) << " ";
             return L;
@@ -118,6 +120,7 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
     //APU registers
     if ((ADDR >= 0x4000) && (ADDR <= 0x4017)) {
         A->Reg_Write(ADDR, VAL);
+        //LOG << "Write: " << std::hex << ADDR << "=" << std::hex << int(VAL) << '\n';
         return;
     }
 
@@ -136,10 +139,16 @@ void CPU::WAIT(uint8_t N) {
     while (N-- > 0) {
         while (P->cycleCount < 3)
             std::this_thread::yield();
+
         P->cycleCount -= 3;
-        A->Pulse_Out(); //Calling pulse out here gives better performance than having APU run itself
-    }                   //Could eliminate APU thread altogether. Also, consider only calling pulse_out if cycle count  
-                        //equals one of the step values in the APU frame counter
+
+        if (A->Pulse_Out()) {
+            //DMC is reading memory, stall CPU for up to 4 cycles
+            //Specific number dependent on CPU operation currently in progress, just use 4 for now
+            N += 4;
+        }
+    }
+
     if (CTRL_IGNORE < 30000)
         CTRL_IGNORE++;
 }

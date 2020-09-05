@@ -1,12 +1,14 @@
 #ifndef APU_H
 #define APU_H
 
+#include "Cartridge.hpp"
 #include <thread>
 #include <chrono>
 #include <cmath>
 #include <array>
 #include <SDL.h>
 #include <SDL_keyboard.h>
+#include <sstream>
 
 //Class data members: Upper camel case
 //Class functions: Uppercase underscore separated
@@ -26,6 +28,9 @@ const std::array<uint16_t, 16> NOISE_PERIOD = {4, 8, 16, 32, 64,
 
 const std::array<uint8_t, 32> TRIANGLE_WAVE = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
                                                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+
+const std::array<uint16_t, 16> DMC_RATE = {428, 380, 340, 320, 286, 254, 226, 214,
+                                            190, 160, 142, 128, 106, 84, 72, 54};
 
 
 //All these structs may be restructured with different data members to reuduce # of calulations
@@ -56,11 +61,11 @@ struct Envelope {
         }
     }
 
-    double getVol() {
+    uint8_t getVol() {
         if (constVol)
-            return static_cast<double>(constVolLevel);
+            return constVolLevel;
         else
-            return static_cast<double>(decayLevel);
+            return decayLevel;
     }
 };
 
@@ -117,7 +122,7 @@ struct Pulse {
     SweepUnit *pulseSweep;
 
 
-    double getSample(long sampleNum) {
+    uint8_t getSample(long sampleNum) {
         if (lengthCount == 0 || pulseSweep->silence)
             return 0;
 
@@ -203,7 +208,7 @@ struct Triangle {
     //SDL audio sampling rate makes it difficult to send this discrete sequence without repeating a lot of values
     //given the speed at which the APU clock is running resulting in bad audio. The triangle needs to change or
     //the mixer can't strictly operate as nesdev says it should 
-    double getSample() {
+    uint8_t getSample() {
         if (!(lengthCount) || !(linearCount) || timer < 2)
             return lastSamp;
         else { 
@@ -248,7 +253,6 @@ struct Noise {
     bool feedBack;
     Envelope *noiseEnvelope;
     double avg;
-    double out;
 
     void clock() {
         feedBack = (shiftReg & 0x0001) ^ ((mode) ? ((shiftReg & 0x0040) >> 6) : ((shiftReg & 0x0002) >> 1));
@@ -259,6 +263,7 @@ struct Noise {
     }
 
     double getSample() {
+        avg = 0;
         for (int j=0; j<20; j++) {
             if (timer-- == 0) {
                 timer = reload;
@@ -266,15 +271,84 @@ struct Noise {
             }
             avg += feedBack;
         }
-        out = round(avg / 20.0f);
-        avg = 0;
+        avg = round(avg / 20.0f);//*noiseEnvelope->getVol();
         if (lengthCount == 0 || shiftReg & 0x0001)
             return 0;
         else {
-            return static_cast<double>(out);
+            return static_cast<double>(avg);
         }
     }
 };
+
+
+struct DMC {
+    uint8_t buffer;
+    uint8_t output;
+    uint8_t sampAddress; //Reg $4012
+    uint8_t sampLength; //Reg $4013
+    uint8_t bytesRemain;
+    uint8_t shiftReg;
+    uint8_t bitsRemain;
+
+    uint16_t rate;
+    uint16_t reload;
+    uint16_t currAddress;
+
+    bool enabled;
+    bool IRQEnabled;
+    bool loop;
+    bool silence;
+    bool bufferEmpty;
+    bool interrupt;
+
+    Cartridge* ROM;
+
+
+    //When the timer hits 0 it clocks the output unit
+    //Note the timer is decremented every APU cycle
+    void clock() {
+        rate = reload;
+        if (!silence) {
+            if (shiftReg & 0x01)
+                output += (output < 126) ? 2 : 0;
+            else
+                output -= (output > 1) ? 2 : 0;
+        }    
+
+        shiftReg = shiftReg >> 1;
+        if (bitsRemain == 0) {
+            bitsRemain = 8;
+            if (bufferEmpty) {
+                silence = true;
+            } else {
+                silence = false;
+                shiftReg = buffer;
+                bufferEmpty = true;
+            }
+        } else {
+            bitsRemain--;
+        }
+
+        //std::cout << "clocked\n";
+        
+    }
+
+    void memoryRead() {
+        //Fill buffer with read memory
+        buffer = ROM->CPU_ACCESS(currAddress);
+        bufferEmpty = false;
+
+        currAddress = (currAddress == 0xFFFF) ? 0x8000 : (currAddress + 1);
+        bytesRemain--;
+        if (!bytesRemain && loop) {
+            currAddress = sampAddress;
+            bytesRemain = sampLength;
+        } else if (!bytesRemain && IRQEnabled)
+            interrupt = true;
+    }
+};
+
+
 
 //The mix audio function has to take inputs from all channels and turn them into a single audio signal
 //Lookup tables with values specified by nesdev are used
@@ -284,20 +358,21 @@ struct Mixer {
     Pulse *pulseTwo;
     Triangle *tri;
     Noise *noise;
+    DMC *dmc;
 
     std::array<double, 31> pulseMixTable;
-    std::array<double, 203> tndTable;
+    std::array<double, 203> tndTable; //Reduce size of this since noise channel output no longer used to calculate index 
     double mixAudio(long sampleNum) {
         double pulseOut = pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)]; 
-        double tndOut = tndTable[3 * tri->getSample()];// + 2*noise->getSample()];
-        return pulseOut + tndOut + noise->getSample();
+        double tndOut = tndTable[3 * tri->getSample() + dmc->output] + noise->getSample();
+        return pulseOut + tndOut;// + noise->getSample();
     }
 };
 
 
 class APU {
     public:
-        APU(): Pulse1Control(0), Pulse1Sweep(0), Pulse1TimeLow(0), Pulse1TimeHigh(0), 
+        APU(Cartridge& NES): Pulse1Control(0), Pulse1Sweep(0), Pulse1TimeLow(0), Pulse1TimeHigh(0), 
                 Pulse2Control(0), Pulse2Sweep(0), Pulse2TimeLow(0), Pulse2TimeHigh(0),
                 TriLinearCount(0), TriTimerHigh(0), TriTimerLow(0), NoiseControl(0),
                 NoiseModePeriod(0), NoiseLength(0), ControlStatus(0), FrameCount(0),
@@ -325,10 +400,16 @@ class APU {
             NoiseChannel.shiftReg = 1;
             NoiseChannel.noiseEnvelope = &NoiseEnv;
 
+            DMCChannel = {};
+            DMCChannel.output = 0;
+            DMCChannel.bufferEmpty = true;
+            DMCChannel.ROM = &NES;
+
             AudioMixer.pulseOne = &PulseOne;
             AudioMixer.pulseTwo = &PulseTwo;
             AudioMixer.tri = &TriChannel;
             AudioMixer.noise = &NoiseChannel;
+            AudioMixer.dmc = &DMCChannel;
 
             want.freq = SAMPLE_RATE; // number of samples per second
             want.format = AUDIO_F32SYS;
@@ -342,10 +423,11 @@ class APU {
             for (int i=0; i<203; i++)
                 AudioMixer.tndTable[i] = 163.67 / (24329.0 / ((double)i + 100));
              
+            LOG.open("APU_LOG.txt", std::ios::trunc | std::ios::out);
             Open_Audio();
         }
 
-
+        std::ofstream LOG;
         long CpuCycles;
         uint16_t ApuCycles;
         uint8_t Jitter;
@@ -353,7 +435,7 @@ class APU {
         bool FireIRQ;
         void Reg_Write(uint16_t reg, uint8_t data);
         void Channels_Out();
-        void Pulse_Out();
+        bool Pulse_Out();
         void Open_Audio();        
         uint8_t Reg_Read();
     
@@ -373,6 +455,8 @@ class APU {
 
         Noise NoiseChannel;
         Envelope NoiseEnv;
+
+        DMC DMCChannel;
 
         //Pulse 1 channel registers
         uint8_t Pulse1Control; //$4000

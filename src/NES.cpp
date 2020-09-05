@@ -16,7 +16,7 @@ int APU_Run(void* data);
  
 int main(int argc, char *argv[]) {
     Cartridge C;
-    APU RICOH_2A03;
+    APU RICOH_2A03(C);
     PPU RICOH_2C02(C);
     CPU MOS_6502(C, RICOH_2C02, RICOH_2A03);
     Display Screen;

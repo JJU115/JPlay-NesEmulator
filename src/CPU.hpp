@@ -5,7 +5,6 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
-#include "Cartridge.hpp"
 #include <SDL_keyboard.h>
 #include "PPU.hpp"
 #include "APU.hpp"

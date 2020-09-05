@@ -48,11 +48,11 @@ void APU::Channels_Out() {
 
 
 //Alternative Pulse out method which is called directly by the cpu every one of its cycles
-void APU::Pulse_Out() {
+bool APU::Pulse_Out() {
     switch (++CpuCycles) {
         case 7457:
-            PulseOne.pulseEnvelope->clock();
-            PulseTwo.pulseEnvelope->clock();
+            PulseOneEnv.clock();
+            PulseTwoEnv.clock();
             NoiseEnv.clock();
             TriChannel.clock();
             break;
@@ -159,19 +159,19 @@ void APU::Pulse_Out() {
             break;
     }
     CpuCycles %= (FrameCount & 0x80) ? 37282 : 29830;
-    
-    //Update the Triangle wave's timer here
-   /* if (TriChannel.timer == 0) {
-        TriChannel.timer = TriChannel.timerReload;
-        if (TriChannel.linearCount != 0 && TriChannel.lengthCount != 0)
-            TriChannel.sequencePos = ((TriChannel.sequencePos + 1) % 32);
-    } else {
-        TriChannel.timer--;
-    }*/
 
-    //Noise Channel clocking
-    //if (CpuCycles % 2 == 0)
-        //NoiseChannel.clock();
+    if (--DMCChannel.rate == 0)
+        DMCChannel.clock();
+        
+    //Try checking for an empty DMC buffer here, then trigger the memory reader if necessary
+    if (DMCChannel.bufferEmpty && DMCChannel.bytesRemain && DMCChannel.enabled) {
+        DMCChannel.memoryRead();
+        if (DMCChannel.interrupt)
+            FireIRQ = true;
+        return true;
+    } else {
+        return false;
+    } 
     
 }
 
@@ -405,8 +405,30 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             NoiseEnv.startFlag = true;
             break;
 
+        case 0x10:
+            DMCChannel.IRQEnabled = data & 0x80;
+            if (!(data & 0x80))
+                DMCChannel.interrupt = false;
+
+            DMCChannel.loop = data & 0x40;
+            DMCChannel.rate = DMC_RATE[data & 0x0F];
+            DMCChannel.reload = DMCChannel.rate;
+            break;
+        case 0x11:
+            DMCChannel.output = data & 0x7F;
+            break;
+
+        case 0x12:
+            DMCChannel.sampAddress = 0xC000 + (data * 64);
+            break;
+
+        case 0x13:
+            DMCChannel.sampLength = (16 * data) + 1;
+            break;
+
         case 0x15: //Enables or disables single channels
             ControlStatus = data;
+            DMCChannel.interrupt = false;
             if (!(data & 0x01)) {
                 PulseOne.lengthCount = 0;
                 PulseOne.enabled = false;
@@ -430,6 +452,16 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
                 NoiseChannel.enabled = false;
             } else
                 NoiseChannel.enabled = true;
+
+            if (!(data & 0x10)) {
+                DMCChannel.bytesRemain = 0;
+                DMCChannel.enabled = false;
+            } else if (!DMCChannel.bytesRemain){
+                DMCChannel.enabled = true;
+                DMCChannel.currAddress = DMCChannel.sampAddress;
+                DMCChannel.bytesRemain = DMCChannel.sampLength;
+            }
+
             break;
 
         case 0x17: //timer is also reset?
@@ -477,8 +509,10 @@ uint8_t APU::Reg_Read() {
         status |= 4;
     if (NoiseChannel.lengthCount > 0)
         status |= 8;
+    if (DMCChannel.bytesRemain > 0)
+        status |= 16;
 
-    return status;
+    return (status | (DMCChannel.interrupt << 7));
 }
 
 
@@ -490,147 +524,15 @@ uint8_t APU::Reg_Read() {
         std::cout << "Error initializing\n";
 
     APU A;
-    long cyc = 0;
-   
-    A.Reg_Write(0x4015, 0x0F);
-    A.Reg_Write(0x4017, 0xC0);
-
-    
 
     SDL_Thread *APU_Thread;
     APU_Thread = SDL_CreateThread(APU_Run, "APU", &A);
     
-    //To emulate the start of DK music
     while (true) {
         SDL_Delay(0.01);
         A.Pulse_Out();
-        switch (cyc++) {
-            ////PULSE ONE
-            case 118316:
-                 A.Reg_Write(0x4000, 0x00);
-                break;
-            case 118320:
-                A.Reg_Write(0x4001, 0x7F);
-                break;
-            case 1279568:
-                A.Reg_Write(0x4002, 0x80);
-                break;
-            case 1279579:
-                A.Reg_Write(0x4003, 0x0A);
-                break;
-
-
-            case 1279616:
-                A.Reg_Write(0x4000, 0x06);
-                break;
-            case 1279620:
-                A.Reg_Write(0x4001, 0x7F);
-                break;
-            case 1666676:
-                A.Reg_Write(0x4002, 0xFC);
-                break;
-            case 1666687:
-                A.Reg_Write(0x4003, 0x09);
-                break;
-
-
-            case 1666724:
-                A.Reg_Write(0x4000, 0x06);
-                break;
-            case 1666728:
-                A.Reg_Write(0x4001, 0x7F);
-                break;
-            case 2053818:
-                A.Reg_Write(0x4002, 0x80);
-                break;
-            case 2053829:
-                A.Reg_Write(0x4003, 0x0A);
-                break;
-
-
-            case 2053866:
-                A.Reg_Write(0x4000, 0x06);
-                break;
-            case 2053870:
-                A.Reg_Write(0x4001, 0x7F);
-                break;
-            case 2441010:
-                A.Reg_Write(0x4002, 0xFC);
-                break;
-            case 2441021:
-                A.Reg_Write(0x4003, 0x09);
-                break;
-            
-            case 2441058:
-                A.Reg_Write(0x4000, 0x06);
-                break;
-            case 2441062:
-                A.Reg_Write(0x4001, 0x7F);
-                break;
-
-
-
-            //// PULSE TWO
-            case 118422:
-                 A.Reg_Write(0x4005, 0x7F);
-                break;
-            case 118439:
-                A.Reg_Write(0x4006, 0xAB);
-                break;
-            case 118450:
-                A.Reg_Write(0x4007, 0x09);
-                break;
-            case 118482:
-                A.Reg_Write(0x4004, 0x84);
-                break;
-
-            case 505288:
-                A.Reg_Write(0x4005, 0x7F);
-                break;
-            case 505305:
-                A.Reg_Write(0x4006, 0xAB);
-                break;
-            case 505316:
-                A.Reg_Write(0x4007, 0x09);
-                break;
-            case 505348:
-                A.Reg_Write(0x4004, 0x84);
-                break;
-
-            case 892434:
-                A.Reg_Write(0x4005, 0x7F);
-                break;
-            case 892451:
-                A.Reg_Write(0x4006, 0xFD);
-                break;
-            case 892462:
-                A.Reg_Write(0x4007, 0x08);
-                break;
-            case 892487:
-                A.Reg_Write(0x4004, 0x89);
-                break;
-
-
-
-        }
-    }
-
-
-    /*auto pulseWave = [](double t, double freq) {
-        return (2.0f * (2.0f*floor(freq*t) - floor(2.0f*freq*t) + 1));
-    };
-    g_sampleNum = 0;
-    float negate = 1;
-    float transform = 50;
-    float freq = 220.0f;
-    float timer = 139.0f; //400hz 
-    float period = floor((4480 / 1789773.0f) * SAMPLE_RATE);
-
-    for(int i = 0; i < 512; i++, g_sampleNum++)
-    {
-        float out = (2.0 / period * abs((g_sampleNum % (int)period) - period/2.0));
-        std::cout << out << '\n';
         
+
     }
 
 

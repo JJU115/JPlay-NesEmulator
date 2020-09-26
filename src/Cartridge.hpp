@@ -11,7 +11,7 @@ class Cartridge {
     public:
         void LOAD(char *FILE);
         uint8_t CPU_ACCESS(uint16_t ADDR, uint8_t VAL=0, bool R=true);
-        uint16_t PPU_ACCESS(uint16_t ADDR, bool R, bool NT_M=false);
+        uint16_t PPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R, bool NT_M=false);
 
     private:
         std::ifstream CPU_LINE1;
@@ -22,6 +22,7 @@ class Cartridge {
         std::vector<uint8_t> PRG_ROM;
         std::vector<uint8_t> CHR_ROM;
 
+        bool ChrRam;
         char *C_BUF;
         char *P_BUF;
         Mapper *M;

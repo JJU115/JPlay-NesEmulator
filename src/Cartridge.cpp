@@ -48,16 +48,22 @@ void Cartridge::LOAD(char *FILE) {
     CPU_LINE1.read(DATA_BUF, 16 * 1024 * H[4]);
     memcpy(P_DATA, DATA_BUF, 16 * 1024 * H[4]);
 
-    CPU_LINE1.seekg(PPU_STARTPOS, std::ios::beg);
-    CPU_LINE1.read(DATA_BUF, 8 * 1024 * H[5]);
-    memcpy(C_DATA, DATA_BUF, 8 * 1024 * H[5]);
+    //Need to properly handle CHR RAM vs CHR ROM, this will do for now
+    ChrRam = !H[5];
+    if (!ChrRam) {
+        CPU_LINE1.seekg(PPU_STARTPOS, std::ios::beg);
+        CPU_LINE1.read(DATA_BUF, 8 * 1024 * H[5]);
+        memcpy(C_DATA, DATA_BUF, 8 * 1024 * H[5]);
+    } else {
+        CHR_ROM.resize(1);
+    }
     
     //Load the mapper
     //Need some sort of dictionary to store (mapper#, mapper class) pairs, for now just if statements
     if (MAP_NUM == 0) 
         M = new NROM(H[4], H[5], (H[6] & 0x01)); //0 = horizontal mirror, 1 = vertical mirror
     else if (MAP_NUM == 1)
-        M = new MMC1(H[4], H[5]);
+        M = new MMC1(H[4], H[5], H[10]); //Using NES 2.0 flag 10 for PRG RAM detection
 
 
     CPU_LINE1.close();
@@ -67,10 +73,13 @@ void Cartridge::LOAD(char *FILE) {
 
 uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
     if (R) {
-        if (ADDR < 0x8000)
-            return M->CPU_READ(ADDR);
+        if (ADDR < 0x8000) //Work RAM, presence determined by mapper
+            return 0;
 
-        return PRG_ROM[M->CPU_READ(ADDR) - 0x8000];
+        if (M->CPU_READ(ADDR) >= PRG_ROM.size())
+            std::cout << "OB Read " << ADDR << " --- " << M->CPU_READ(ADDR) << '\n';
+
+        return PRG_ROM[M->CPU_READ(ADDR)]; //Works for NROM but not MMC1
         
     } else {
         M->CPU_WRITE(ADDR, VAL); //possible cases here differ by mapper, this will have to change when implementing more of them 
@@ -79,14 +88,23 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
 }
 
 
-uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, bool R, bool NT_M) {
+uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R, bool NT_M) {
     if (NT_M)
         return M->PPU_READ(ADDR, NT_M);
 
     if (R) {
-        return CHR_ROM[M->PPU_READ(ADDR, false)];  
+        if (ChrRam)
+            return 0;
+        else {
+            if (M->PPU_READ(ADDR, false) >= CHR_ROM.size()) {
+                std::cout << "OB Read " << ADDR << " --- " << M->PPU_READ(ADDR, false) << '\n';
+            }
+
+            return CHR_ROM[M->PPU_READ(ADDR, false)]; 
+        } 
     } else {
         //Write. The only thing writable to here is the CHR data on the cartridge which might not even be possible
+        //CHR_ROM[M->PPU_READ(ADDR, false)] = VAL;
     }
 
     return *P_BUF;

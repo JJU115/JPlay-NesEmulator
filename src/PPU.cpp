@@ -10,6 +10,10 @@ extern SDL_mutex* mainThreadMutex;
 extern std::condition_variable CPU_COND;
 extern bool pause;
 extern bool log;
+extern long CPUCycleCount;
+long PPUcount;
+
+extern SDL_mutex* CpuPpuMutex;
 
 uint16_t TICK;
 std::ofstream P_LOG;
@@ -27,15 +31,16 @@ uint8_t PPU::FETCH(uint16_t ADDR) {
 
     //Pattern Tables
     if (ADDR <= 0x1FFF)
-        return ROM->PPU_ACCESS(ADDR, true);
+        return ROM->PPU_ACCESS(ADDR, 0, true);
 
     //Nametables - Addresses need to be properly translated to array indices, 0x2000 will be index 0 for example and so on
     if (ADDR <= 0x2FFF) {
-        uint16_t NT_ADDR = ROM->PPU_ACCESS(ADDR, true, true);
+        /*uint16_t NT_ADDR = ROM->PPU_ACCESS(ADDR, true, true);
         if (NT_ADDR < 0x2800)
             return VRAM[NT_ADDR % 0x2000];
         else
-            return VRAM[(NT_ADDR - 0x0400) % 0x2800];
+            return VRAM[(NT_ADDR - 0x0400) % 0x2800];*/
+        return VRAM[ROM->PPU_ACCESS(ADDR, 0, true, true)];
     }
         
     //Palette RAM
@@ -55,15 +60,17 @@ void PPU::WRITE(uint16_t ADDR, uint8_t DATA) {
         ADDR &= 0x3F1F;
 
     if (ADDR <= 0x1FFF)
-        ROM->PPU_ACCESS(ADDR, true); //Doesn't do anything since writing to change cartridge CHR data probably isn't allowed
-
+        ROM->PPU_ACCESS(ADDR, DATA, false); //Shouldn't do anything since writing to change cartridge CHR data probably isn't allowed
+    
     //Nametables
     if ((ADDR >= 0x2000) && (ADDR <= 0x2FFF)) {
-        uint16_t NT_ADDR = ROM->PPU_ACCESS(ADDR, true, true);
+        /*uint16_t NT_ADDR = ROM->PPU_ACCESS(ADDR, true, true);
         if (NT_ADDR < 0x2800)
             VRAM[NT_ADDR % 0x2000] = DATA;
         else
-            VRAM[NT_ADDR - 0x0400] = DATA;
+            VRAM[NT_ADDR - 0x0400] = DATA;*/
+        VRAM[ROM->PPU_ACCESS(ADDR, 0, true, true)] = DATA;
+        //P_LOG << "Wrote " << std::hex << int(DATA) << " to " << ROM->PPU_ACCESS(ADDR, true, true) << '\n'; 
     }
         
 
@@ -88,12 +95,16 @@ void PPU::CYCLE(uint16_t N) {
 
     while (N-- > 0) {
         //std::this_thread::sleep_for(std::chrono::nanoseconds(186));
+        PPUcount++;
         TICK++;
+        SDL_LockMutex(CpuPpuMutex);
         cycleCount++;
+        SDL_UnlockMutex(CpuPpuMutex);
+
+        while (cycleCount > 14)
+            std::this_thread::yield();
     }
     //Temporary for now to resolve background render timing issues
-    while (cycleCount > 6)
-        std::this_thread::yield();
 
     //P_LOG << "PPU Tick\n";
 }
@@ -103,6 +114,7 @@ void PPU::GENERATE_SIGNAL() {
     OAM_PRIMARY.assign(256, 0);
     OAM_SECONDARY.assign(32, 255); //Problem here?
     cycleCount = 0;
+    PPUcount = 0;
     clock_t t;
     VRAM.fill(0);
     uint16_t SLINE_NUM = 0;
@@ -122,16 +134,18 @@ void PPU::GENERATE_SIGNAL() {
         }*/
 
         //These two calls ensure the main thread is waiting on its condition variable before the PPU goes any further
+        //std::cout << "Lock begin\n";
         if (SDL_LockMutex(mainThreadMutex) != 0)
             std::cout << "Lock failed\n";
         if (SDL_UnlockMutex(mainThreadMutex) != 0)
             std::cout << "Unlock failed\n";
 
         //std::cout << "Lock/Unlock complete\n";
+        //std::cout << "Cyclecount: " << cycleCount << '\n';
+        PPUcount = 0;
         PRE_RENDER();
 
         while (SLINE_NUM < 240) {
-            
             SCANLINE(SLINE_NUM++);
         }
         SDL_CondSignal(mainPPUCond);
@@ -146,26 +160,25 @@ void PPU::GENERATE_SIGNAL() {
         CYCLE(85);*/
         SLINE_NUM++;
         //std::cout << "Post render done\n";
+        CYCLE();
+    
+        //Here, 82523 PPU cycles have elapsed, CPU should be at 27507 cycles (with 2/3 through one more)
+        
         PPUSTATUS |= 0x80; //VBLANK flag is actually only set in the 2nd tick of scanline 241
         NMI_OCC = 1;
         //VBLANK will cause NMI if PPUCTRL allows it, there's some complication here since NMIs can still happen during vblank, will need to resolve later
         if (NMI_OCC && NMI_OUT)
             GEN_NMI = 1;
             
-        while (SLINE_NUM++ < 262) { //Every scanline does the 256 increment and 257 copy but as with pre-render, not sure if it happens in the vblank period, so commented here for now
+        CYCLE(340);
+        //Start CPU cycle count over
+        while (SLINE_NUM++ < 260) //Every scanline does the 256 increment and 257 copy but as with pre-render, not sure if it happens in the vblank period, so commented here for now
             CYCLE(341);
-            /*Y_INCREMENT();
-            CYCLE();
-            if ((PPUMASK & 0x08) || (PPUMASK & 0x10)) {
-                VRAM_ADDR &= 0xFBE0;
-                VRAM_ADDR |= (VRAM_TEMP & 0x041F);
-            }
-            CYCLE(85);*/
-        }
-
+            
         NMI_OCC = 0;
         SLINE_NUM = 0;
-        ODD_FRAME = ~ODD_FRAME;
+        ODD_FRAME = (ODD_FRAME) ? false : true;
+       
         //std::cout << "One frame rendered\n";
         auto t2 = std::chrono::high_resolution_clock::now();
         //std::cout << "Frame time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << '\n';
@@ -234,7 +247,7 @@ void PPU::PRE_RENDER() {
 
 //Sprite evaluation for the next scanline occurs at the same time
 void PPU::SCANLINE(uint16_t SLINE) {
-
+    visible = true;
     OAM_SECONDARY.assign(32, 255);
     TICK = 0;
     uint8_t NTABLE_BYTE, PTABLE_LOW, PTABLE_HIGH, ATTR_BYTE;
@@ -319,7 +332,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
         BGPIXEL = 0x3F00;
         //Background pixel composition
         if (PPUMASK & 0x08) {
-            BGPIXEL |= (((BGSHIFT_ONE & 0x8000) >> 15) | ((BGSHIFT_TWO & 0x8000) >> 14));
+            BGPIXEL |= (((BGSHIFT_ONE & 0x8000) >> 15) | ((BGSHIFT_TWO & 0x8000) >> 14)); //Apply fine x here?
             //Form the pixel color
             if ((((SLINE)/16) % 2) == 0)
                 BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x03) << 2) : (ATTRSHIFT_ONE & 0x0C);
@@ -445,7 +458,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
         }*/
         CYCLE();
     }
-
+    visible = false;
     /*if ((PPUMASK & 0x08) && (PPUMASK & 0x10)) {
         P_LOG << "Sline: " << int(SLINE) << '\n';
         for (int i : OAM_SECONDARY)
@@ -602,18 +615,26 @@ void PPU::PRE_SLINE_TILE_FETCH() {
 }
 
 //CPU will call this function
-void PPU::REG_WRITE(uint8_t DATA, uint8_t REG) {
+void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
     //P_LOG << "Writing " << int(DATA) << " to register" << int(REG) << '\n';
     //P_LOG << "Toggle: " << WRITE_TOGGLE << '\n';
+    uint8_t T;
     switch (REG) {
         case 0: //fine-x is affected, but no x scrolling implemented right now
+            //T = PPUCTRL & 0x10;
             PPUCTRL = DATA;
+            //if (visible) //To prevent toggling bit 4 while visible
+                //PPUCTRL = (PPUCTRL & 0x10) | T;
             NMI_OUT = (DATA & 0x80);
             VRAM_TEMP &= 0xF3FF;
             VRAM_TEMP |= (((DATA & 0x03) << 10)); 
             break;
-        case 1:
+        case 1: //Possible mid-frame state change
+            //T = PPUMASK & 0x08;
             PPUMASK = DATA;
+            //if (visible) //To prevent toggling bit 3 while visible
+                //PPUMASK = (PPUMASK & 0x08) | T;
+            //P_LOG << "Render: " << bool(DATA & 0x08) << " cycle: " << cycle << '\n';
             break;
         case 2:
             break;
@@ -633,7 +654,7 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG) {
             } else {
                 VRAM_TEMP &= 0xFFE0;
                 VRAM_TEMP |= ((DATA & 0xF8) >> 3);
-                //Fine_x = DATA & 0x07
+                Fine_x = DATA & 0x07;
             }
             WRITE_TOGGLE = (WRITE_TOGGLE) ? false : true;
             break;

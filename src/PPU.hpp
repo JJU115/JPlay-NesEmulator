@@ -12,9 +12,11 @@
 #include <thread>
 #include <cstdint>
 #include <vector>
+#include <utility>
 #include "Cartridge.hpp"
 #include <mutex>
 #include <condition_variable>
+
 
 struct Sprite {
     uint8_t Y_POS;
@@ -38,16 +40,16 @@ auto SPR_SELECT = [](uint8_t m, Sprite S) {
 
 
 class PPU {
-    friend class CPU;
+    friend class CPU; //Should try and get rid of this
     public:
         uint32_t* framePixels;
         long cycleCount;
         void GENERATE_SIGNAL();
-        void REG_WRITE(uint8_t DATA, uint8_t REG);
+        void REG_WRITE(uint8_t DATA, uint8_t REG, long cycle);
         uint8_t REG_READ(uint8_t REG);
         PPU(Cartridge& NES): PPUCTRL(0), PPUMASK(0), PPUSTATUS(0), OAMADDR(0), OAMDATA(0), PPUSCROLL(0), PPUADDR(0), PPUDATA(0), OAMDMA(0),
-        VRAM_ADDR(0), VRAM_TEMP(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false), WRITE_TOGGLE(false),
-        GEN_NMI(0), NMI_OCC(0), NMI_OUT(0), ROM(&NES) { framePixels = new uint32_t[256 * 240]; }
+        VRAM_ADDR(0), VRAM_TEMP(0), Fine_x(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false), WRITE_TOGGLE(false),
+        GEN_NMI(0), NMI_OCC(0), NMI_OUT(0), ROM(&NES), visible(false) { framePixels = new uint32_t[256 * 240]; }
     private:
         void PRE_RENDER();
         void SCANLINE(uint16_t SLINE);
@@ -83,7 +85,7 @@ class PPU {
 
         uint16_t VRAM_ADDR;
         uint16_t VRAM_TEMP;
-        //uint8_t FINE_X;
+        uint8_t Fine_x;
         bool WRITE_TOGGLE;
 
         uint16_t BGSHIFT_ONE, BGSHIFT_TWO;
@@ -94,6 +96,8 @@ class PPU {
         std::vector<uint8_t> SPR_XPOS;
 
         bool ODD_FRAME;
+        bool visible;
+
 };
 
 

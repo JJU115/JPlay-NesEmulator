@@ -7,8 +7,11 @@
 
 bool pause;
 bool Gamelog;
+long CPUCycleCount;
 SDL_cond* mainPPUCond;
 SDL_mutex* mainThreadMutex;
+
+SDL_mutex* CpuPpuMutex;
 
 int CPU_Run(void* data);
 int PPU_Run(void* data);
@@ -25,11 +28,14 @@ int main(int argc, char *argv[]) {
     pause = false;
     Gamelog = false;
 
+    CPUCycleCount = 0; //Declared in PPU.hpp, included into CPU.hpp, then included in here!
+
     SDL_Thread* PPU_Thread;
     SDL_Thread* CPU_Thread;
     SDL_Thread* APU_Thread;
     mainThreadMutex = SDL_CreateMutex();
     mainPPUCond = SDL_CreateCond();
+    CpuPpuMutex = SDL_CreateMutex();
     
     if (argc > 1)
         std::cout << argv[1] << std::endl;
@@ -44,9 +50,9 @@ int main(int argc, char *argv[]) {
     auto frameStart = std::chrono::high_resolution_clock::now();
 
     //Start the threads
+    CPU_Thread = SDL_CreateThread(CPU_Run, "CPU", &MOS_6502);
     APU_Thread = SDL_CreateThread(APU_Run, "APU", &RICOH_2A03);
     PPU_Thread = SDL_CreateThread(PPU_Run, "PPU", &RICOH_2C02);
-    CPU_Thread = SDL_CreateThread(CPU_Run, "CPU", &MOS_6502);
     SDL_DetachThread(APU_Thread);
     SDL_DetachThread(PPU_Thread);
     SDL_DetachThread(CPU_Thread);
@@ -92,9 +98,11 @@ int main(int argc, char *argv[]) {
         //Wait if needed
         frameEnd = std::chrono::high_resolution_clock::now();
         elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
-        //std::cout << "FPS: " << (1000/elapsedTime) << '\n';
+        std::cout << "FPS: " << (1000/elapsedTime) << '\n';
         if (elapsedTime < 16)
             std::this_thread::sleep_for(std::chrono::milliseconds(16 - elapsedTime));
+         
+        //std::cout << "Frame done\n";
     }
 
     return 0;

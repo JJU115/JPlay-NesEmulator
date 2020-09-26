@@ -87,14 +87,14 @@ bool APU::Pulse_Out() {
             NoiseEnv.clock();
             break;
 
-        case 29828: //If 4-step
+        case 29831: //If 4-step
             if (!(FrameCount & 0xC0)) {
                 FrameInterrupt = true; //Fire IRQ
                 FireIRQ = true;
             }
             break;
 
-        case 29829: //If 4-step
+        case 29832: //If 4-step
             if (!(FrameCount & 0x80)) {
                 PulseOne.pulseEnvelope->clock();
                 PulseOne.pulseSweep->clock();
@@ -125,7 +125,7 @@ bool APU::Pulse_Out() {
             }
             break;
         
-        case 29830:
+        case 29833:
             if (!(FrameCount & 0xC0)) {
                 FrameInterrupt = true; //Fire IRQ
                 FireIRQ = true;
@@ -158,10 +158,13 @@ bool APU::Pulse_Out() {
             }
             break;
     }
-    CpuCycles %= (FrameCount & 0x80) ? 37282 : 29830;
+    CpuCycles %= (FrameCount & 0x80) ? 37282 : 29833;
 
-    if (--DMCChannel.rate == 0)
-        DMCChannel.clock();
+    if (--DMCChannel.rate == 0) {
+        DMCChannel.rate = DMCChannel.reload;
+        if (DMCChannel.enabled)
+            DMCChannel.clock();
+    }
         
     //Try checking for an empty DMC buffer here, then trigger the memory reader if necessary
     if (DMCChannel.bufferEmpty && DMCChannel.bytesRemain && DMCChannel.enabled) {
@@ -456,10 +459,14 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             if (!(data & 0x10)) {
                 DMCChannel.bytesRemain = 0;
                 DMCChannel.enabled = false;
-            } else if (!DMCChannel.bytesRemain){
+            } else { //If bytes remain, channel will not be enabled at all, need to fix
                 DMCChannel.enabled = true;
-                DMCChannel.currAddress = DMCChannel.sampAddress;
-                DMCChannel.bytesRemain = DMCChannel.sampLength;
+                if (DMCChannel.bytesRemain) {
+                    DMCChannel.memoryRead();
+                } else {
+                    DMCChannel.currAddress = DMCChannel.sampAddress;
+                    DMCChannel.bytesRemain = DMCChannel.sampLength;
+                }
             }
 
             break;
@@ -501,8 +508,7 @@ uint8_t APU::Reg_Read() {
     uint8_t status = FrameInterrupt << 6;
     FrameInterrupt = false;
 
-    if (PulseOne.lengthCount > 0)
-        status |= 1;
+    status |= (PulseOne.lengthCount > 0);
     if (PulseTwo.lengthCount > 0)
         status |= 2;
     if (TriChannel.lengthCount > 0)
@@ -511,7 +517,7 @@ uint8_t APU::Reg_Read() {
         status |= 8;
     if (DMCChannel.bytesRemain > 0)
         status |= 16;
-
+    
     return (status | (DMCChannel.interrupt << 7));
 }
 

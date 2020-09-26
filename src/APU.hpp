@@ -300,6 +300,7 @@ struct DMC {
     bool silence;
     bool bufferEmpty;
     bool interrupt;
+    bool newCycle;
 
     Cartridge* ROM;
 
@@ -307,7 +308,6 @@ struct DMC {
     //When the timer hits 0 it clocks the output unit
     //Note the timer is decremented every APU cycle
     void clock() {
-        rate = reload;
         if (!silence) {
             if (shiftReg & 0x01)
                 output += (output < 126) ? 2 : 0;
@@ -316,6 +316,7 @@ struct DMC {
         }    
 
         shiftReg = shiftReg >> 1;
+        
         if (bitsRemain == 0) {
             bitsRemain = 8;
             if (bufferEmpty) {
@@ -325,9 +326,9 @@ struct DMC {
                 shiftReg = buffer;
                 bufferEmpty = true;
             }
-        } else {
-            bitsRemain--;
         }
+        
+        bitsRemain--;
 
         //std::cout << "clocked\n";
         
@@ -371,6 +372,7 @@ struct Mixer {
 
 
 class APU {
+    friend class CPU;
     public:
         APU(Cartridge& NES): Pulse1Control(0), Pulse1Sweep(0), Pulse1TimeLow(0), Pulse1TimeHigh(0), 
                 Pulse2Control(0), Pulse2Sweep(0), Pulse2TimeLow(0), Pulse2TimeHigh(0),

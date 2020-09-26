@@ -12,6 +12,9 @@ std::condition_variable CPU_COND;
 std::unique_lock<std::mutex> CPU_LCK(CPU_MTX);
 
 extern bool pause;
+extern long CPUCycleCount;
+
+extern SDL_mutex* CpuPpuMutex;
 
 uint8_t VAL, TEMP, LOW, HIGH, POINT;
 uint16_t WBACK_ADDR;
@@ -22,7 +25,7 @@ std::string LOG_LINE;
 std::stringstream LOG_STREAM;
 
 short CTRL_IGNORE;
-
+bool CLIEx;
 
 void CPU::STACK_PUSH(uint8_t BYTE) {
     RAM[0x0100 + STCK_PNT--] = BYTE;   
@@ -36,7 +39,7 @@ unsigned char CPU::STACK_POP() {
 
 //Fetch is called a lot by the CPU, needs to be as efficient as possible
 uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=true) {
-    //LOG << "CPU read of " << std::hex << int(ADDR) << '\n';
+    //LOG << "CPU read of " << std::hex << int(ADDR) << "  ";
     //Every 0x0800 bytes of 0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
     if (ADDR < 0x2000)
         ADDR &= 0x07FF;
@@ -47,20 +50,18 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=true) {
         return P->REG_READ((ADDR & 0x2007) % 0x2000);
 
     if (ADDR < 0x2000) {
-        //if (SAVE)
+        if (SAVE)
             //LOG << std::hex << int(RAM[ADDR]) << " ";
         return RAM[ADDR];
     }
 
-    if (ADDR == 0x4015) {
-        //LOG << "Read: " << std::hex << ADDR << "=" << std::hex << int(A->Reg_Read()) << '\n';
+    if (ADDR == 0x4015)
         return A->Reg_Read();
-    }
 
     //Controller probe
     if (ADDR == 0x4016) {
-        TEMP = CONTROLLER1 & 1;
-        CONTROLLER1 >>= 1;
+        TEMP = (CONTROLLER1 & 0x80) >> 7;
+        CONTROLLER1 <<= 1;
         return TEMP;
     }
 
@@ -79,7 +80,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=true) {
 }
 
 
-void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
+void CPU::WRITE(uint8_t VAL, uint16_t ADDR, long cyc) {
     //LOG << "CPU write of " << int(VAL) << " to " << std::hex << int(ADDR) << '\n';
     if (ADDR < 0x2000) {
         ADDR &= 0x07FF;
@@ -88,30 +89,30 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
     }
 
     //PPU registers - WRITE_BUF stores VAL in the lower 8 bits and a number representing the register to write to
-    //in the 8th bit
+    //in the 8th bit. Send cyc to allow PPU to track mid-frame state changes
     if ((ADDR >= 0x2000) && (ADDR <= 0x3FFF)) {
-        P->REG_WRITE(VAL, (ADDR & 0x2007) % 0x2000);
+        P->REG_WRITE(VAL, (ADDR & 0x2007) % 0x2000, (cyc + CPUCycleCount)*3);
         return;
     }
         
 
     //CPU is suspended during OAM DMA transfer, 513 or 514 cycles, need some way to determine odd vs even cpu cycles
-    //transfer begins at current OAM write address
+    //transfer begins at current OAM write address. Send cyc here as above
     if (ADDR == 0x4014) {
         P->OAMDMA = VAL;
         WAIT();  
         for (uint16_t i=0; i<256; i++) {
             WAIT(2);
-            P->REG_WRITE(FETCH((VAL << 8) + i), 4);
+            P->REG_WRITE(FETCH((VAL << 8) + i), 4, (cyc + CPUCycleCount)*3);
         }
         return;
     }
 
     //Controller probe
     if (ADDR == 0x4016) {
-        if (VAL == 1) 
+        if (VAL & 0x01) 
             probe = true;       
-        else if (VAL == 0)
+        else
             probe = false;
         return;
     }
@@ -135,18 +136,23 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR) {
 void CPU::WAIT(uint8_t N) {
     while (pause)
         std::this_thread::yield();
-    
-    while (N-- > 0) {
-        while (P->cycleCount < 3)
-            std::this_thread::yield();
 
-        P->cycleCount -= 3;
+    ++N;
+    while (--N > 0) { //Why --N? N-- creates a temporary copy of N which is almost immediately thrown away!
+        while (P->cycleCount < 3)
+            std::this_thread::yield();    
+
+        SDL_LockMutex(CpuPpuMutex); //Locking helps prevent data races involving cycleCount which could lead to inaccurate timing
+        P->cycleCount -= 3;         //between CPU and PPU, BUT... Locking involves heavy performance cost, especially when called this
+        SDL_UnlockMutex(CpuPpuMutex);//often. Will have to consider other synchronization schemes particularly atomic operations
+        CPUCycleCount++;                //which will require some reading and research
 
         if (A->Pulse_Out()) {
             //DMC is reading memory, stall CPU for up to 4 cycles
             //Specific number dependent on CPU operation currently in progress, just use 4 for now
             N += 4;
         }
+
     }
 
     if (CTRL_IGNORE < 30000)
@@ -160,8 +166,8 @@ void CPU::RESET() {
     PROG_CNT = ((FETCH(0xFFFD) << 8) | FETCH(0xFFFC));
     STAT |= 0x04;
     CTRL_IGNORE = 0;
-
-    WAIT(7);
+    
+    WAIT(7); 
 }
 
 
@@ -184,6 +190,7 @@ void CPU::RUN() {
     RAM.fill(0); //Clear RAM
     CTRL_IGNORE = 0;
     bool unofficial = false;
+    CLIEx = false;
     uint8_t cycleCount;
     const uint8_t *keyboard = SDL_GetKeyboardState(NULL);
     //Enable logging
@@ -206,6 +213,10 @@ void CPU::RUN() {
     
     //Main loop
     while (true) {
+        if (CLIEx) {
+            //LOG << A->FireIRQ << " STAT: " << std::hex << int(STAT) << " Delay: " << IRQDelay << '\n'; 
+            CLIEx = false;
+        }
         //LOG << "Interrupts - R: " << R << " NMI: " << int(P->GEN_NMI) << " I: " << I << " BRK: " << BRK <<  " APU: " << A->FireIRQ << '\n';
         if (R) {
             RESET();
@@ -213,12 +224,18 @@ void CPU::RUN() {
         } else if (P->GEN_NMI) {
             P->GEN_NMI = 0;
             IRQ_NMI(0xFFFA);
-        } else if (I && !BRK && !(STAT & 0x04)) {
+        } else if (I && !BRK && !(STAT & 0x04) && !IRQDelay) {
+            //LOG << "IRQ\n";
             IRQ_NMI(0xFFFE);
-        } else if (A->FireIRQ && !(STAT & 0x04)) {
+            I = false;
+        } else if (A->FireIRQ && !(STAT & 0x04) && !IRQDelay) { //Issues with APU issued IRQs, need finer testing
+            //LOG << "IRQ\n";
             IRQ_NMI(0xFFFE);
             A->FireIRQ = false;
         }
+
+        if (IRQDelay)
+            IRQDelay = false;
 
         //LOG << std::hex << PROG_CNT << ": ";
         CODE = FETCH(PROG_CNT++);
@@ -291,6 +308,7 @@ void CPU::RUN() {
             //PLP
             case 0x28:
                 STAT = STACK_POP();
+                IRQDelay = true;
                 cycleCount += 3;
                 break;
             //JSR
@@ -335,7 +353,7 @@ void CPU::RUN() {
                 }
 
                 if ((CODE & 0x1F) == 0x10) {
-                    BRANCH(CODE >> 6, (CODE >> 5) & 0x01);
+                    cycleCount += BRANCH(CODE >> 6, (CODE >> 5) & 0x01);
                     break;
                 }    
 
@@ -373,6 +391,7 @@ void CPU::RUN() {
         //At this point, all cycles of the instruction have been executed
         //LOG << "Instr end\n";
         //LOG << OPCODES[CODE] << '\t' << '\t';
+        //LOG << int(cycleCount) << '\n';
         //CONTROL.get(B, 6);
         //CONTROL.getline(B, 6);
         //LOG << LOG_STREAM.str();
@@ -380,14 +399,15 @@ void CPU::RUN() {
         //Controller polling if probe is on
         //Mapping of keys to buttons is arbitrary at this point just to get things working
         if (probe) {
-            CONTROLLER1 = keyboard[SDL_SCANCODE_A] | 
-            (keyboard[SDL_SCANCODE_B] << 1) | 
-            (keyboard[SDL_SCANCODE_RSHIFT] << 2) | 
-            (keyboard[SDL_SCANCODE_RETURN] << 3) |
-            (keyboard[SDL_SCANCODE_UP] << 4) |
-            (keyboard[SDL_SCANCODE_DOWN] << 5) | 
-            (keyboard[SDL_SCANCODE_LEFT] << 6) |
-            (keyboard[SDL_SCANCODE_RIGHT] << 7); 
+            CONTROLLER1 = 0x00;
+            CONTROLLER1 = (keyboard[SDL_SCANCODE_A] << 7) | 
+            (keyboard[SDL_SCANCODE_B] << 6) | 
+            (keyboard[SDL_SCANCODE_RSHIFT] << 5) | 
+            (keyboard[SDL_SCANCODE_RETURN] << 4) |
+            (keyboard[SDL_SCANCODE_UP] << 3) |
+            (keyboard[SDL_SCANCODE_DOWN] << 2) | 
+            (keyboard[SDL_SCANCODE_LEFT] << 1) |
+            keyboard[SDL_SCANCODE_RIGHT]; 
         }
 
        /* if (B != OPCODES[CODE]) {
@@ -420,6 +440,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //Immediate
         case 0:
             VAL = FETCH(PROG_CNT++, true);
+            LOG << " " << std::hex << int(VAL) << " ";
             break;
         //Zero-Page
         case 1:
@@ -469,10 +490,10 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             WBACK_ADDR |= (FETCH(PROG_CNT++, true) << 8);
             
             //'Oops' cycle
-            bool oops = (((OP & 0x0F) == 0x0D) || ((OP & 0x0F) == 0x09));
+            bool oops = (((OP & 0xF0) != 0x90) && (((OP & 0x0F) == 0x0D) || ((OP & 0x0F) == 0x09)));
             if (oops && ((ADDR_TYPE == 6 && (LOW + IND_X) > 255) || (ADDR_TYPE == 7 && (LOW + IND_Y) > 255)))
                 cycles++;
-
+              
             WBACK_ADDR += (ADDR_TYPE == 7) ? IND_X : IND_Y;
             cycles += 2;
             break; }
@@ -516,14 +537,14 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x1E:
             cycles++;
         case 0x06:
-            cycles += 2;
         case 0x16:
         case 0x0E:
+            cycles += 2;
             VAL = FETCH(WBACK_ADDR);
             STAT &= 0xFE;
             STAT |= (VAL >> 7);
             VAL = VAL << 1;
-            WRITE(VAL, WBACK_ADDR); //W_BACK = true;
+            WRITE(VAL, WBACK_ADDR, cycles+1); //W_BACK = true;
             REG_P = &VAL;
             break;
         case 0x0A:
@@ -540,6 +561,8 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             STAT |= (VAL & 0xC0);
             if ((ACC & VAL) == 0)
                 STAT |= 0x02;
+            else
+                STAT &= 0xFD;
             break;
         //CLC
         case 0x18:
@@ -552,6 +575,8 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //CLI
         case 0x58:
             STAT &= 0xFB;
+            IRQDelay = true;
+            CLIEx = true;
             break;
         //CLV
         case 0xB8:
@@ -600,7 +625,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0xC6:
             VAL = FETCH(WBACK_ADDR) - 1;
             cycles += 2;
-            WRITE(VAL, WBACK_ADDR); //W_BACK = true;
+            WRITE(VAL, WBACK_ADDR, cycles+1); //W_BACK = true;
             REG_P = &VAL;
             break;
         //DEX
@@ -630,11 +655,11 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0xFE:
             cycles++;
         case 0xEE:
-        case 0xE6:
         case 0xF6:
+        case 0xE6:
             VAL = FETCH(WBACK_ADDR) + 1;
             cycles += 2;
-            WRITE(VAL, WBACK_ADDR);
+            WRITE(VAL, WBACK_ADDR, cycles+1);
             REG_P = &VAL;
             break;
         //INX
@@ -696,14 +721,14 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x5E:
             cycles++;
         case 0x4E:
-        case 0x46:
         case 0x56:
+        case 0x46:
             VAL = FETCH(WBACK_ADDR);
             cycles += 2;
             STAT &= 0xFE;
             STAT |= (0x01 & VAL);
             VAL = VAL >> 1;
-            WRITE(VAL, WBACK_ADDR); //W_BACK = true;
+            WRITE(VAL, WBACK_ADDR, cycles+1); //W_BACK = true;
             REG_P = &VAL;
             break;
         //NOP
@@ -734,8 +759,8 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x3E:
             cycles++;
         case 0x2E:
+        case 0x36:   
         case 0x26:
-        case 0x36:
             VAL = FETCH(WBACK_ADDR);
             cycles += 2;
             TEMP = VAL << 1;
@@ -743,7 +768,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             STAT &= 0xFE;
             STAT |= ((0x80 & VAL) >> 7);
             VAL = TEMP;
-            WRITE(VAL, WBACK_ADDR); //W_BACK = true;
+            WRITE(VAL, WBACK_ADDR, cycles+1); //W_BACK = true;
             REG_P = &VAL;
             break;
         //ROR
@@ -758,8 +783,8 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x7E:
             cycles++;
         case 0x6E:
-        case 0x66:
         case 0x76:
+        case 0x66:
             VAL = FETCH(WBACK_ADDR);
             cycles += 2;
             TEMP = STAT;
@@ -767,7 +792,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             STAT |= (0x01 & VAL);
             VAL = VAL >> 1;
             VAL |= ((TEMP & 0x01) << 7);
-            WRITE(VAL, WBACK_ADDR); //W_BACK = true;
+            WRITE(VAL, WBACK_ADDR, cycles+1); //W_BACK = true;
             REG_P = &VAL;
             break;
         //SBC
@@ -801,6 +826,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //SEI
         case 0x78:
             STAT |= 0x04;
+            IRQDelay = true;
             break;
         //STA
         case 0x91:
@@ -811,8 +837,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x85:
         case 0x8D:
         case 0x95:
-            //VAL = ACC;
-            WRITE(ACC, WBACK_ADDR); //W_BACK = true;
+            WRITE(ACC, WBACK_ADDR, cycles+1); //W_BACK = true;
             break;
         //STX
         case 0x86:
@@ -820,7 +845,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x96:
             //VAL = IND_X;
             //W_BACK = true;
-            WRITE(IND_X, WBACK_ADDR);
+            WRITE(IND_X, WBACK_ADDR, cycles+1);
             break;
         //STY
         case 0x84:
@@ -828,7 +853,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0x8C:
             //VAL = IND_Y;
             //W_BACK = true;
-            WRITE(IND_Y, WBACK_ADDR);
+            WRITE(IND_Y, WBACK_ADDR, cycles+1);
             break;
         //TAX
         case 0xAA:
@@ -873,7 +898,8 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
 
 //Branching is signed!!!
 //If FLAG equals VAL then take the branch, another 'oops' cycle here
-void CPU::BRANCH(char FLAG, char VAL) {
+uint8_t CPU::BRANCH(char FLAG, char VAL) {
+    uint8_t cycles = 1;
 
     switch (FLAG) {
         case 0:
@@ -896,9 +922,13 @@ void CPU::BRANCH(char FLAG, char VAL) {
     int8_t OPRAND = FETCH(PROG_CNT++, true);
     
     if (FLAG == VAL) {
+        if (((PROG_CNT + OPRAND) & 0x0F00) != (PROG_CNT & 0x0F00))
+            cycles++; //This should be executed if branch occurs to a new page
+
         PROG_CNT += OPRAND;
-        WAIT();
+        cycles++;
     }
+
     
-    WAIT(2);
+    return cycles;
 }

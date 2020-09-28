@@ -79,7 +79,7 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
         if (M->CPU_READ(ADDR) >= PRG_ROM.size())
             std::cout << "OB Read " << ADDR << " --- " << M->CPU_READ(ADDR) << '\n';
 
-        return PRG_ROM[M->CPU_READ(ADDR)]; //Works for NROM but not MMC1
+        return PRG_ROM[M->CPU_READ(ADDR)];
         
     } else {
         M->CPU_WRITE(ADDR, VAL); //possible cases here differ by mapper, this will have to change when implementing more of them 

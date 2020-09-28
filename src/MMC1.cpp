@@ -12,12 +12,12 @@ uint32_t MMC1::CPU_READ(uint16_t ADDR) {
 
     if ((CONTROL & 0x0C) > 4) {//2 or 3, that is in 16 KB + 16 KB mode
         if (ADDR > 0x7FFF && ADDR < 0xC000)
-            return PRG_BANK_SIZE * PBANK1 + (ADDR % 0x8000);
+            return PRG_BANK_SIZE * (PBANK1 % PRG_BANKS) + (ADDR % 0x8000);
         else
-            return PRG_BANK_SIZE * PBANK2 + (ADDR % 0xC000);
+            return PRG_BANK_SIZE * (PBANK2 % PRG_BANKS) + (ADDR % 0xC000);
 
     } else { //Mapper is in 32 KB PRG mode
-        return PRG_BANK_SIZE * PBANK1 + (ADDR % 0x8000);
+        return PRG_BANK_SIZE * (PBANK1 % PRG_BANKS) + (ADDR % 0x8000);
     }
  }
 
@@ -33,7 +33,7 @@ uint16_t MMC1::PPU_READ(uint16_t ADDR, bool NT) {
         //std::cout << "MMC1 Control: " << std::hex << int(CONTROL) << " Bank1: " << int(CHR_BANK1) << " Bank2: " << int(CHR_BANK2) << '\n';
 
     if (CONTROL & 0x10)  //Two switchable 4 KB banks
-        return (ADDR < 0x1000) ? CHR_BANK_SIZE * CHR_BANK1 + ADDR : CHR_BANK_SIZE * CHR_BANK2 + (ADDR % 0x1000);
+        return (ADDR < 0x1000) ? CHR_BANK_SIZE * (CHR_BANK1 % (2 * CHR_BANKS)) + ADDR : CHR_BANK_SIZE * (CHR_BANK2 % (2 * CHR_BANKS)) + (ADDR % 0x1000);
     else  //One switchable 8 KB bank
         return  CHR_BANK_SIZE * ((CHR_BANK1 & 0x1E) % (2 * CHR_BANKS)) + ADDR;
     
@@ -79,18 +79,18 @@ void MMC1::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
                             PBANK2 = NUM_BANKS - 1;
                             break;
                     }
-                    //std::cout << "Control changed to " << std::hex << int(SHIFT) << '\n';
+                    std::cout << "Control changed to " << std::hex << int(SHIFT) << '\n';
                     break;
                 case 0x2000:
                     CHR_BANK1 = SHIFT;
-                    //std::cout << "Bank1 changed to " << std::hex << int(SHIFT) << '\n';
+                    std::cout << "Bank1 changed to " << std::hex << int(SHIFT) << '\n';
                     break;
                 case 0x4000:
                     CHR_BANK2 = SHIFT;
                     break;
                 case 0x6000:
                     PRG_BANK = SHIFT; //change prg bank
-                    //std::cout << "PBank changed to " << std::hex << int(SHIFT) << '\n';
+                    std::cout << "PBank changed to " << std::hex << int(SHIFT) << '\n';
                     switch ((CONTROL & 0x0C) >> 2) {
                         case Fixed32M0: //Switch 32 KB at $8000, ignore low bit of bank number
                         case Fixed32M1:

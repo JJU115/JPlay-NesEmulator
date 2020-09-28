@@ -51,7 +51,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=true) {
 
     if (ADDR < 0x2000) {
         if (SAVE)
-            //LOG << std::hex << int(RAM[ADDR]) << " ";
+            LOG << std::hex << " " << int(RAM[ADDR]) << " ";
         return RAM[ADDR];
     }
 
@@ -237,13 +237,13 @@ void CPU::RUN() {
         if (IRQDelay)
             IRQDelay = false;
 
-        //LOG << std::hex << PROG_CNT << ": ";
+        LOG << std::hex << PROG_CNT << ": ";
         CODE = FETCH(PROG_CNT++);
         cycleCount = 1;
         
         //Compose a string and append after EXEC
         LOG_STREAM.str(std::string());
-        //LOG << std::hex << int(CODE) << " ";
+        LOG << std::hex << int(CODE) << " ";
         LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
         LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
         LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
@@ -390,11 +390,11 @@ void CPU::RUN() {
         }
         //At this point, all cycles of the instruction have been executed
         //LOG << "Instr end\n";
-        //LOG << OPCODES[CODE] << '\t' << '\t';
+        LOG << OPCODES[CODE] << '\t' << '\t';
         //LOG << int(cycleCount) << '\n';
         //CONTROL.get(B, 6);
         //CONTROL.getline(B, 6);
-        //LOG << LOG_STREAM.str();
+        LOG << LOG_STREAM.str();
 
         //Controller polling if probe is on
         //Mapping of keys to buttons is arbitrary at this point just to get things working
@@ -434,6 +434,9 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
     bool W_BACK = false;
     uint8_t *REG_P = nullptr;
     uint8_t cycles = 0;
+
+    uint16_t S_TEMP = 0;
+    uint16_t S_VAL = 0;
     
     //Create an enum for ADDR_TYPE instead of having random numbers
     switch (ADDR_TYPE) {
@@ -805,14 +808,13 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         case 0xF9:
             VAL = FETCH(WBACK_ADDR);
         case 0xE9:
-            TEMP = ((STAT & 0x01) > 0) ? (ACC - VAL) : (ACC - VAL - 1);
-            if ((STAT & 0x01) > 0)
-                STAT = (((int8_t(ACC) - int8_t(VAL)) > 127) || ((int8_t(ACC) - int8_t(VAL)) < -128)) ? (STAT ^ 0x40) : (STAT & 0xBF);  
-            else 
-                STAT = (((ACC - VAL - 1) > 127) || ((ACC - VAL - 1) < -128)) ? (STAT ^ 0x40) : (STAT & 0xBF); 
+            S_VAL = uint16_t(VAL) ^ 0xFF;
+            S_TEMP = uint16_t(ACC) + S_VAL + (STAT & 0x01);
+            STAT &= 0xBE; //Clear V and C flags
+            STAT |= (S_TEMP & 0xFF00) ? 1 : 0;
+            STAT |= ((S_TEMP ^ uint16_t(ACC)) & (S_TEMP ^ S_VAL) & 0x0080) ? 0x40 : 0;
 
-            STAT = ((TEMP & 0x80) == 0) ? (STAT | 0x01) : (STAT & 0xFE);
-            ACC = TEMP;
+            ACC = S_TEMP & 0xFF;
             REG_P = &ACC;
             break;
         //SEC

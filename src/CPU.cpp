@@ -13,6 +13,7 @@ std::unique_lock<std::mutex> CPU_LCK(CPU_MTX);
 
 extern bool pause;
 extern long CPUCycleCount;
+long intCnt;
 
 extern SDL_mutex* CpuPpuMutex;
 
@@ -38,7 +39,7 @@ unsigned char CPU::STACK_POP() {
 
 
 //Fetch is called a lot by the CPU, needs to be as efficient as possible
-uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=true) {
+uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE) {
     //LOG << "CPU read of " << std::hex << int(ADDR) << "  ";
     //Every 0x0800 bytes of 0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
     if (ADDR < 0x2000)
@@ -46,12 +47,14 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=true) {
 
     uint8_t TEMP;
     //0x2008 -- 0x3FFF mirrors 0x2000 -- 0x2007 every 8 bytes
-    if (ADDR >= 0x2000 && ADDR < 0x4000)
-        return P->REG_READ((ADDR & 0x2007) % 0x2000);
+    if (ADDR >= 0x2000 && ADDR < 0x4000) {
+        LOG << "PPU register read: " << std::hex << ADDR << '\n';
+        return P->REG_READ((ADDR & 0x2007) % 0x2000, CPUCycleCount);
+    }
 
     if (ADDR < 0x2000) {
-        if (SAVE)
-            LOG << std::hex << " " << int(RAM[ADDR]) << " ";
+        //if (SAVE)
+          //  LOG << std::hex << " " << int(RAM[ADDR]) << " ";
         return RAM[ADDR];
     }
 
@@ -80,7 +83,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE=true) {
 }
 
 
-void CPU::WRITE(uint8_t VAL, uint16_t ADDR, long cyc) {
+void CPU::WRITE(uint8_t VAL, uint16_t ADDR, uint8_t cyc) {
     //LOG << "CPU write of " << int(VAL) << " to " << std::hex << int(ADDR) << '\n';
     if (ADDR < 0x2000) {
         ADDR &= 0x07FF;
@@ -145,8 +148,9 @@ void CPU::WAIT(uint8_t N) {
         SDL_LockMutex(CpuPpuMutex); //Locking helps prevent data races involving cycleCount which could lead to inaccurate timing
         P->cycleCount -= 3;         //between CPU and PPU, BUT... Locking involves heavy performance cost, especially when called this
         SDL_UnlockMutex(CpuPpuMutex);//often. Will have to consider other synchronization schemes particularly atomic operations
-        CPUCycleCount++;                //which will require some reading and research
-
+    
+        CPUCycleCount++;
+        intCnt++;
         if (A->Pulse_Out()) {
             //DMC is reading memory, stall CPU for up to 4 cycles
             //Specific number dependent on CPU operation currently in progress, just use 4 for now
@@ -189,6 +193,7 @@ void CPU::IRQ_NMI(uint16_t V) {
 void CPU::RUN() {
     RAM.fill(0); //Clear RAM
     CTRL_IGNORE = 0;
+    intCnt = 0;
     bool unofficial = false;
     CLIEx = false;
     uint8_t cycleCount;
@@ -213,15 +218,16 @@ void CPU::RUN() {
     
     //Main loop
     while (true) {
-        if (CLIEx) {
-            //LOG << A->FireIRQ << " STAT: " << std::hex << int(STAT) << " Delay: " << IRQDelay << '\n'; 
+        /*if (CLIEx) {
+            LOG << A->FireIRQ << " STAT: " << std::hex << int(STAT) << " Delay: " << IRQDelay << '\n'; 
             CLIEx = false;
-        }
+        }*/
         //LOG << "Interrupts - R: " << R << " NMI: " << int(P->GEN_NMI) << " I: " << I << " BRK: " << BRK <<  " APU: " << A->FireIRQ << '\n';
         if (R) {
             RESET();
             R = false;
-        } else if (P->GEN_NMI) {
+        } else if (P->GEN_NMI && !P->NmiDelay) {
+            //LOG << "NMI\n";
             P->GEN_NMI = 0;
             IRQ_NMI(0xFFFA);
         } else if (I && !BRK && !(STAT & 0x04) && !IRQDelay) {
@@ -234,21 +240,21 @@ void CPU::RUN() {
             A->FireIRQ = false;
         }
 
-        if (IRQDelay)
-            IRQDelay = false;
+        IRQDelay = (IRQDelay) ? false : IRQDelay;
+        P->NmiDelay = (P->NmiDelay) ? false : P->NmiDelay;
 
-        LOG << std::hex << PROG_CNT << ": ";
+        //LOG << std::hex << PROG_CNT << ": ";
         CODE = FETCH(PROG_CNT++);
         cycleCount = 1;
         
         //Compose a string and append after EXEC
         LOG_STREAM.str(std::string());
-        LOG << std::hex << int(CODE) << " ";
+        //LOG << std::hex << int(CODE) << " ";
         LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
         LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
         LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
         LOG_STREAM << "STAT:" << std::hex << int(STAT) << " ";
-        LOG_STREAM << "SP:" << std::hex << int(STCK_PNT) << '\n';
+        LOG_STREAM << "SP:" << std::hex << int(STCK_PNT);
 
         //Stack Access Instructions and JMP
         switch (CODE) {
@@ -390,11 +396,10 @@ void CPU::RUN() {
         }
         //At this point, all cycles of the instruction have been executed
         //LOG << "Instr end\n";
-        LOG << OPCODES[CODE] << '\t' << '\t';
+        //LOG << OPCODES[CODE] << '\t' << '\t';
         //LOG << int(cycleCount) << '\n';
         //CONTROL.get(B, 6);
         //CONTROL.getline(B, 6);
-        LOG << LOG_STREAM.str();
 
         //Controller polling if probe is on
         //Mapping of keys to buttons is arbitrary at this point just to get things working
@@ -414,7 +419,9 @@ void CPU::RUN() {
             std::cout << "Instruction mismatch: " << B << " != " << OPCODES[CODE] << std::endl;
             break;
         }*/
+        //LOG << P->SLINE_NUM << "  " << P->TICK << " " << CPUCycleCount << '\n';
         WAIT(cycleCount);
+        //LOG << OPCODES[CODE] << '\t' << LOG_STREAM.str() << "\t\t" << P->SLINE_NUM << "  " << P->TICK << '\n';
     }
 }
 
@@ -493,7 +500,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             WBACK_ADDR |= (FETCH(PROG_CNT++, true) << 8);
             
             //'Oops' cycle
-            bool oops = (((OP & 0xF0) != 0x90) && (((OP & 0x0F) == 0x0D) || ((OP & 0x0F) == 0x09)));
+            bool oops = (((OP & 0xF0) != 0x90) && (((OP & 0x0F) == 0x0D) || ((OP & 0x0F) == 0x09))) || (OP == 0xBC) || (OP == 0xBE);
             if (oops && ((ADDR_TYPE == 6 && (LOW + IND_X) > 255) || (ADDR_TYPE == 7 && (LOW + IND_Y) > 255)))
                 cycles++;
               

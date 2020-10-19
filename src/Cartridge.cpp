@@ -43,7 +43,7 @@ void Cartridge::LOAD(char *FILE) {
 
     uint8_t* P_DATA = PRG_ROM.data();
     uint8_t* C_DATA = CHR_ROM.data();
-    char* DATA_BUF = new char[16 * 1024 * H[4]]; //Should be the greater size of chr vs prg
+    char* DATA_BUF = (H[5] > 2*H[4]) ? new char[8 * 1024 * H[5]] : new char[16 * 1024 * H[4]]; //Should be the greater size of chr vs prg
     
     CPU_LINE1.read(DATA_BUF, 16 * 1024 * H[4]);
     memcpy(P_DATA, DATA_BUF, 16 * 1024 * H[4]);

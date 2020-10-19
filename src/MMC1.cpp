@@ -79,18 +79,18 @@ void MMC1::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
                             PBANK2 = NUM_BANKS - 1;
                             break;
                     }
-                    std::cout << "Control changed to " << std::hex << int(SHIFT) << '\n';
+                    //std::cout << "Control changed to " << std::hex << int(SHIFT) << '\n';
                     break;
                 case 0x2000:
                     CHR_BANK1 = SHIFT;
-                    std::cout << "Bank1 changed to " << std::hex << int(SHIFT) << '\n';
+                    //std::cout << "Bank1 changed to " << std::hex << int(SHIFT) << '\n';
                     break;
                 case 0x4000:
                     CHR_BANK2 = SHIFT;
                     break;
                 case 0x6000:
                     PRG_BANK = SHIFT; //change prg bank
-                    std::cout << "PBank changed to " << std::hex << int(SHIFT) << '\n';
+                    //std::cout << "PBank changed to " << std::hex << int(SHIFT) << '\n';
                     switch ((CONTROL & 0x0C) >> 2) {
                         case Fixed32M0: //Switch 32 KB at $8000, ignore low bit of bank number
                         case Fixed32M1:

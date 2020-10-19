@@ -15,7 +15,6 @@ long PPUcount;
 
 extern SDL_mutex* CpuPpuMutex;
 
-uint16_t TICK;
 std::ofstream P_LOG;
 
 
@@ -45,7 +44,7 @@ uint8_t PPU::FETCH(uint16_t ADDR) {
         
     //Palette RAM
     if (ADDR <= 0x3F1F)
-        return PALETTES[ADDR & 0xFF];       
+        return PALETTES[ADDR & 0xFF];
 
     return 0;
 }
@@ -97,6 +96,7 @@ void PPU::CYCLE(uint16_t N) {
         //std::this_thread::sleep_for(std::chrono::nanoseconds(186));
         PPUcount++;
         TICK++;
+        dots++;
         SDL_LockMutex(CpuPpuMutex);
         cycleCount++;
         SDL_UnlockMutex(CpuPpuMutex);
@@ -115,13 +115,14 @@ void PPU::GENERATE_SIGNAL() {
     OAM_SECONDARY.assign(32, 255); //Problem here?
     cycleCount = 0;
     PPUcount = 0;
-    clock_t t;
+    //lock_t t;
     VRAM.fill(0);
-    uint16_t SLINE_NUM = 0;
+    SLINE_NUM = 0;
     P_LOG.open("PPU_LOG.txt", std::ios::trunc | std::ios::out);
-
+    int ext = 0;
+    dots = 0;
     while (true) {
-        auto t1 = std::chrono::high_resolution_clock::now();
+        //auto t1 = std::chrono::high_resolution_clock::now();
         //std::cout << "Start frame\n";
         //For testing dktest.nes only
         /*if ((PPUMASK & 0x08) != 0) {
@@ -148,6 +149,8 @@ void PPU::GENERATE_SIGNAL() {
         while (SLINE_NUM < 240) {
             SCANLINE(SLINE_NUM++);
         }
+        ++SLINE_NUM;
+        TICK = 0;
         SDL_CondSignal(mainPPUCond);
         //std::cout << "Entering post render\n";
         CYCLE(341); //Post-render, don't think any of the below happens as it does in every other scanline but will keep commented here for now
@@ -158,36 +161,51 @@ void PPU::GENERATE_SIGNAL() {
             VRAM_ADDR |= (VRAM_TEMP & 0x041F);
         }
         CYCLE(85);*/
-        SLINE_NUM++;
+        TICK = 0;
+        ++SLINE_NUM;
         //std::cout << "Post render done\n";
-        CYCLE();
+        CYCLE(1);
     
-        //Here, 82523 PPU cycles have elapsed, CPU should be at 27507 cycles (with 2/3 through one more)
-        
-        PPUSTATUS |= 0x80; //VBLANK flag is actually only set in the 2nd tick of scanline 241
+        //Here, 82523 or 82522 PPU cycles have elapsed, CPU should be at 27507 cycles (with 2/3 through one more)
+        while (cycleCount > 2)
+            std::this_thread::yield();    
+
+        PPUSTATUS |= 0x80; //VBLANK flag is actually only set in the 2nd tick of scanline 241 
         NMI_OCC = 1;
-        //VBLANK will cause NMI if PPUCTRL allows it, there's some complication here since NMIs can still happen during vblank, will need to resolve later
-        if (NMI_OCC && NMI_OUT)
-            GEN_NMI = 1;
-            
+
+        if (NMI_OCC && NMI_OUT && !SuppressNmi)
+            GEN_NMI = 1;      
+
+        SuppressNmi = false; 
         CYCLE(340);
+        ++SLINE_NUM;
+        TICK = 0;
         //Start CPU cycle count over
-        while (SLINE_NUM++ < 260) //Every scanline does the 256 increment and 257 copy but as with pre-render, not sure if it happens in the vblank period, so commented here for now
+        while (SLINE_NUM < 262) { //Every scanline does the 256 increment and 257 copy but as with pre-render, not sure if it happens in the vblank period, so commented here for now
             CYCLE(341);
+            TICK = 0;
+            ++SLINE_NUM;
+        }
             
         NMI_OCC = 0;
-        SLINE_NUM = 0;
-        ODD_FRAME = (ODD_FRAME) ? false : true;
        
         //std::cout << "One frame rendered\n";
-        auto t2 = std::chrono::high_resolution_clock::now();
+        //auto t2 = std::chrono::high_resolution_clock::now();
         //std::cout << "Frame time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << '\n';
         //Get main to render the frame
        // nametable(VRAM);
         //SDL_CondSignal(mainPPUCond);
         /*for (uint8_t i : OAM_PRIMARY)
-            P_LOG << int(i) << " ";
-        P_LOG << "\n\n";*/
+            P_LOG << int(i) << " ";*/
+        
+        while (cycleCount > 2) //29781 every other frame
+            std::this_thread::yield();
+        
+        //P_LOG << CPUCycleCount << " " << PPUcount << '\n';
+        
+        CPUCycleCount = 0;
+        SLINE_NUM = 0;
+        ODD_FRAME = (ODD_FRAME) ? false : true;
     }
 }
 
@@ -201,7 +219,7 @@ void PPU::PRE_RENDER() {
     uint8_t NTABLE_BYTE;
 
     CYCLE();
-    PPUSTATUS &= 0x5F;  //Signal end of Vblank and clear sprite overflow
+    PPUSTATUS &= 0x1F;  //Signal end of Vblank and clear sprite overflow
 
     while (TICK < 321) {
         if ((TICK % 8 == 0) && (TICK < 256))
@@ -234,8 +252,8 @@ void PPU::PRE_RENDER() {
 
     PRE_SLINE_TILE_FETCH();
 
-    //Last 4 cycles of scanline (skip last on odd frames)
-    if (ODD_FRAME)
+    //Last 4 cycles of scanline (skip last on odd frames when BG rendering enabled)
+    if (ODD_FRAME && (PPUMASK & 0x08))
         CYCLE(3);
     else
         CYCLE(4);
@@ -247,18 +265,22 @@ void PPU::PRE_RENDER() {
 
 //Sprite evaluation for the next scanline occurs at the same time
 void PPU::SCANLINE(uint16_t SLINE) {
-    visible = true;
     OAM_SECONDARY.assign(32, 255);
     TICK = 0;
     uint8_t NTABLE_BYTE, PTABLE_LOW, PTABLE_HIGH, ATTR_BYTE;
     uint8_t activeSprites = 0;
     uint16_t BGPIXEL, SPPIXEL;
+    uint16_t fineXSelect = 0x8000 >> Fine_x;
     uint32_t COL;
-    bool spriteZeroRendered = false; //true if sprite zero of primary OAM is being rendered
+
+    bool spriteZeroRenderedNext = false;
     bool spriteZeroHit = false; //true if zero hit has occurred
     bool spriteZeroLoaded = false;
     bool targ = false;
     bool spriteHasPriority = false;
+
+    bool hideLeftBg = !(PPUMASK & 0x02);
+    bool hideLeftSpr = !(PPUMASK & 0x04);
 
     //For sprite eval
     uint8_t n = 0;
@@ -329,22 +351,22 @@ void PPU::SCANLINE(uint16_t SLINE) {
         }
         
 
+
         BGPIXEL = 0x3F00;
         //Background pixel composition
-        if (PPUMASK & 0x08) {
-            BGPIXEL |= (((BGSHIFT_ONE & 0x8000) >> 15) | ((BGSHIFT_TWO & 0x8000) >> 14)); //Apply fine x here?
+        if ((PPUMASK & 0x08))  {
+            BGPIXEL |= (((BGSHIFT_ONE & fineXSelect) >> (15 - Fine_x)) | ((BGSHIFT_TWO & fineXSelect) >> (14 - Fine_x))); //Apply fine x here?
             //Form the pixel color
             if ((((SLINE)/16) % 2) == 0)
                 BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x03) << 2) : (ATTRSHIFT_ONE & 0x0C);
             else
                 BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x30) >> 2) : ((ATTRSHIFT_ONE & 0xC0) >> 4);
-        }
+        } 
 
 
-        
         SPPIXEL = 0x3F10;
         //Sprite pixel composition
-        if ((PPUMASK & 0x10) && (SLINE != 0)) {
+        if ((PPUMASK & 0x10) && (SLINE != 1)) {
             for (uint8_t i=0; i<SPR_XPOS.size(); i++) {
                 //If sprite pattern is all zero, ignore it and move on
                 if (!SPR_PAT[i*2] && !SPR_PAT[i*2 + 1])
@@ -371,11 +393,17 @@ void PPU::SCANLINE(uint16_t SLINE) {
             }
         }
 
+        SPPIXEL = (hideLeftSpr && (TICK < 9)) ? 0x3F10 : SPPIXEL;
+        BGPIXEL = (hideLeftBg && (TICK < 9)) ? 0x3F00 : BGPIXEL;
+
+        //if ((OAM_PRIMARY[0] == 112) && (OAM_PRIMARY[3] == 128) && (SPPIXEL > 0x3f10) && (BGPIXEL > 0x3f00))
+            //P_LOG << spriteZeroHit << " " << spriteZeroRendered << " " << spriteZeroLoaded << '\n';
+
         //Check for sprite zero hit, only if all rendering enabled, the zero hit hasn't already happened, and sprite zero is being rendered
         if ((PPUMASK & 0x08) && (PPUMASK & 0x10) && !spriteZeroHit && spriteZeroRendered)
             spriteZeroHit = (spriteZeroLoaded && ((SPPIXEL & 0x03) != 0) && ((BGPIXEL & 0x03) != 0));
 
-        if (spriteZeroHit && (PPUMASK & 0x08))
+        if (spriteZeroHit && (PPUMASK & 0x08) && (TICK != 256))
             PPUSTATUS |= 0x40;
 
         //Multiplex
@@ -425,9 +453,10 @@ void PPU::SCANLINE(uint16_t SLINE) {
                         OAM_SECONDARY[foundSprites*4 + offset++] = data;
                         if (offset == 4) { //All bytes copied
                             offset = 1;
-                            spriteZeroRendered = (n == 0) ? true : spriteZeroRendered;
-                            IncN();
+                            spriteZeroRenderedNext = (n == 0) ? true : spriteZeroRenderedNext;
                             foundSprites++;
+                            IncN();
+                            //foundSprites++;
                             break;
                         }     
                     }                                 
@@ -458,14 +487,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
         }*/
         CYCLE();
     }
-    visible = false;
-    /*if ((PPUMASK & 0x08) && (PPUMASK & 0x10)) {
-        P_LOG << "Sline: " << int(SLINE) << '\n';
-        for (int i : OAM_SECONDARY)
-            P_LOG << i << " ";
-        P_LOG << "\n\n";
-    }*/
-
+    
+    spriteZeroRendered = spriteZeroRenderedNext;
 
 
     //Copy all horizontal bits from t to v at tick 257 if rendering enabled
@@ -480,7 +503,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
     SPR_PAT.clear();
     uint16_t SPR_PAT_ADDR;
     for(int i=0; i < 8; i++) {
-        OAMADDR = 0; //Enabling causes failure despite nesdev saying it should happen
+        //OAMADDR = 0; //Enabling causes failure despite nesdev saying it should happen
         if ((OAM_SECONDARY.size() < (i+1)*4) || (foundSprites == 0)) {
             CYCLE(8);
         } else {
@@ -495,7 +518,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
             if ((PPUCTRL & 0x20) == 0) { //8*8 sprites
                 SPR_PAT_ADDR = (((PPUCTRL & 0x08) << 9) | (OAM_SECONDARY[i*4 + 1]*16));
                 //Vertically flipped or not?
-                SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (7 - SLINE - OAM_SECONDARY[i*4]) : (SLINE - OAM_SECONDARY[i*4]); 
+                SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (7 - (SLINE - OAM_SECONDARY[i*4])) : (SLINE - OAM_SECONDARY[i*4]); 
                 
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 CYCLE(2);
@@ -536,7 +559,6 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
     //Cycle 337-340
     CYCLE(4); //Supposed to be nametable fetches identical to fetches at start of next scanline
-    //std::cout << "Scanline complete\n";
     //auto t2 = std::chrono::high_resolution_clock::now();
     //std::cout << "Scanline time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << '\n';
 }
@@ -622,9 +644,13 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
     switch (REG) {
         case 0: //fine-x is affected, but no x scrolling implemented right now
             //T = PPUCTRL & 0x10;
-            PPUCTRL = DATA;
+            if (!(PPUCTRL & 0x80) && (DATA & 0x80) && (PPUSTATUS & 0x80)) {
+                GEN_NMI = 1;
+                NmiDelay = true;
+            }
             //if (visible) //To prevent toggling bit 4 while visible
                 //PPUCTRL = (PPUCTRL & 0x10) | T;
+            PPUCTRL = DATA;
             NMI_OUT = (DATA & 0x80);
             VRAM_TEMP &= 0xF3FF;
             VRAM_TEMP |= (((DATA & 0x03) << 10)); 
@@ -681,7 +707,7 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
 }
 
 
-uint8_t PPU::REG_READ(uint8_t REG) {
+uint8_t PPU::REG_READ(uint8_t REG, long cycle) {
     static uint8_t data_buf = 0x00;
     //P_LOG << "PPU reg read of " << int(REG) << '\n';
     switch (REG) {
@@ -690,11 +716,15 @@ uint8_t PPU::REG_READ(uint8_t REG) {
         case 1:
             break;
         case 2: {//Affects nmi generation, see http://wiki.nesdev.com/w/index.php/NMI
+           // P_LOG << "2002 read, cycle: " << cycle << '\n';
             uint8_t TEMP = (PPUSTATUS & 0x7F) | (NMI_OCC << 7);
+            SuppressNmi = ((SLINE_NUM == 242) && (TICK < 3));
+
             NMI_OCC = 0;
             PPUSTATUS &= 0x7F;
             WRITE_TOGGLE = 0;
-            return TEMP; }
+            return TEMP;  
+                }
         case 3:
             break;
         case 4: //Attempting to read 0x2004 before cycle 65 on visible scanlines returns 0xFF
@@ -706,9 +736,10 @@ uint8_t PPU::REG_READ(uint8_t REG) {
             break;
         case 7: {
             uint8_t TEMP = data_buf;
+            bool palRead = (VRAM_ADDR > 0x3EFF);
             data_buf = FETCH(VRAM_ADDR);
             VRAM_ADDR += ((PPUCTRL & 0x04) != 0) ? 32 : 1;
-            return (VRAM_ADDR >= 0x3F00) ? data_buf : TEMP; }
+            return (palRead) ? data_buf : TEMP; }
     }
 
     return 0;

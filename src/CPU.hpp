@@ -19,8 +19,8 @@ class CPU {
         CONTROLLER1(0), CONTROLLER2(0), probe(false), IRQDelay(false), ROM(&NES), P(&P1), A(&A1) { keyboard = SDL_GetKeyboardState(NULL); }
         
     private:
-        uint8_t FETCH(uint16_t ADDR, bool SAVE);
-        void WRITE(uint8_t VAL, uint16_t ADDR, long cyc=0);
+        uint8_t FETCH(uint16_t ADDR, bool SAVE=true);
+        void WRITE(uint8_t VAL, uint16_t ADDR, uint8_t cyc=0);
         uint8_t EXEC(uint8_t OP, char ADDR_TYPE);
         uint8_t BRANCH(char FLAG, char VAL);
         void STACK_PUSH(uint8_t BYTE);

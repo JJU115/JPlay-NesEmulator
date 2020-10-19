@@ -46,10 +46,10 @@ class PPU {
         long cycleCount;
         void GENERATE_SIGNAL();
         void REG_WRITE(uint8_t DATA, uint8_t REG, long cycle);
-        uint8_t REG_READ(uint8_t REG);
+        uint8_t REG_READ(uint8_t REG, long cycle);
         PPU(Cartridge& NES): PPUCTRL(0), PPUMASK(0), PPUSTATUS(0), OAMADDR(0), OAMDATA(0), PPUSCROLL(0), PPUADDR(0), PPUDATA(0), OAMDMA(0),
         VRAM_ADDR(0), VRAM_TEMP(0), Fine_x(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ODD_FRAME(false), WRITE_TOGGLE(false),
-        GEN_NMI(0), NMI_OCC(0), NMI_OUT(0), ROM(&NES), visible(false) { framePixels = new uint32_t[256 * 240]; }
+        GEN_NMI(0), NMI_OCC(0), NMI_OUT(0), ROM(&NES), SuppressNmi(false), NmiDelay(false), spriteZeroRendered(false) { framePixels = new uint32_t[256 * 240]; }
     private:
         void PRE_RENDER();
         void SCANLINE(uint16_t SLINE);
@@ -83,9 +83,13 @@ class PPU {
         std::vector<uint8_t> OAM_SECONDARY;
         std::array<uint8_t, 32> PALETTES;
 
+        long dots;
+
+        uint16_t SLINE_NUM;
+        uint16_t TICK;
         uint16_t VRAM_ADDR;
         uint16_t VRAM_TEMP;
-        uint8_t Fine_x;
+        uint8_t Fine_x;  //Rendering doesn't use this currently
         bool WRITE_TOGGLE;
 
         uint16_t BGSHIFT_ONE, BGSHIFT_TWO;
@@ -96,7 +100,9 @@ class PPU {
         std::vector<uint8_t> SPR_XPOS;
 
         bool ODD_FRAME;
-        bool visible;
+        bool SuppressNmi;
+        bool NmiDelay;
+        bool spriteZeroRendered;
 
 };
 

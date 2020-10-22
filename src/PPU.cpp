@@ -43,8 +43,12 @@ uint8_t PPU::FETCH(uint16_t ADDR) {
     }
         
     //Palette RAM
-    if (ADDR <= 0x3F1F)
-        return PALETTES[ADDR & 0xFF];
+    if (ADDR <= 0x3F1F) {
+        if ((ADDR % 4) == 0)
+            return PALETTES[0];
+        else
+            return PALETTES[ADDR & 0xFF];
+    }
 
     return 0;
 }
@@ -312,8 +316,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
             case 0:
                 //Fetch PTable high
                 PTABLE_HIGH = FETCH(((PPUCTRL & 0x10) << 8) | ((NTABLE_BYTE * 16) + 8 + ((VRAM_ADDR & 0x7000) >> 12)));
-                if (targ)
-                    P_LOG << "PTable high: " << std::hex << int(PTABLE_HIGH) << '\n';
+                //if (targ)
+                //    P_LOG << "PTable high: " << std::hex << int(PTABLE_HIGH) << '\n';
                 if (TICK != 256)
                     X_INCREMENT();
                 else
@@ -325,26 +329,34 @@ void PPU::SCANLINE(uint16_t SLINE) {
                     break;
                 BGSHIFT_ONE |= PTABLE_LOW;
                 BGSHIFT_TWO |= PTABLE_HIGH;
-                ATTRSHIFT_ONE = ATTRSHIFT_TWO;
-                ATTRSHIFT_TWO = ATTR_BYTE;
+                ATTR_NEXT >>= 2;
+                //ATTRSHIFT_ONE = ATTRSHIFT_TWO;
+                //ATTRSHIFT_TWO = ATTR_BYTE;
                 break;
             case 2:
                 //Fetch nametable byte
                 NTABLE_BYTE = FETCH(0x2000 | (VRAM_ADDR & 0x0FFF)); //Change based on base nametable select of ppuctrl register?
-                if (targ)
-                    P_LOG << "NTable byte: " << std::hex << int(NTABLE_BYTE) << '\n';
+                //if (targ)
+                //    P_LOG << "NTable byte: " << std::hex << int(NTABLE_BYTE) << '\n';
                 break;
             case 4:
                 //Fetch attribute byte - since one byte controls a 4*4 tile group, fetching becomes more complicated. Need to change this:
+                //ATTR_BYTE = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0x07));
                 ATTR_BYTE = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0x07));
-                if (targ)
-                    P_LOG << "Attribute byte: " << std::hex << int(ATTR_BYTE) << '\n';
+                
+                if (((VRAM_ADDR & 0x03E0) >> 5) & 0x02) 
+                    ATTR_BYTE >>= 4;
+                if ((VRAM_ADDR & 0x001F) & 0x02) 
+                    ATTR_BYTE >>= 2;
+                
+                ATTR_NEXT |= ((ATTR_BYTE & 0x03) << 2);
+            
                 break;
             case 6:
                 //Fetch ptable low
                 PTABLE_LOW = FETCH(((PPUCTRL & 0x10) << 8) | ((NTABLE_BYTE * 16) + ((VRAM_ADDR & 0x7000) >> 12)));
-                if (targ)
-                    P_LOG << "PTable low: " << std::hex << int(PTABLE_LOW) << '\n';
+                //if (targ)
+                //    P_LOG << "PTable low: " << std::hex << int(PTABLE_LOW) << '\n';
                 break;
             default:
                 break;
@@ -357,16 +369,19 @@ void PPU::SCANLINE(uint16_t SLINE) {
         if ((PPUMASK & 0x08))  {
             BGPIXEL |= (((BGSHIFT_ONE & fineXSelect) >> (15 - Fine_x)) | ((BGSHIFT_TWO & fineXSelect) >> (14 - Fine_x))); //Apply fine x here?
             //Form the pixel color
-            if ((((SLINE)/16) % 2) == 0)
+            BGPIXEL |= ((ATTRSHIFT_ONE & (0x80 >> Fine_x)) >> (7 - Fine_x) << 2) | (((ATTRSHIFT_TWO & (0x80 >> Fine_x)) >> (7 - Fine_x)) << 3);
+
+            /*if ((((SLINE)/16) % 2) == 0)
                 BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x03) << 2) : (ATTRSHIFT_ONE & 0x0C);
             else
                 BGPIXEL |= (((TICK-1)/16) % 2 == 0) ? ((ATTRSHIFT_ONE & 0x30) >> 2) : ((ATTRSHIFT_ONE & 0xC0) >> 4);
+            */
         } 
 
 
         SPPIXEL = 0x3F10;
         //Sprite pixel composition
-        if ((PPUMASK & 0x10) && (SLINE != 1)) {
+        if ((PPUMASK & 0x10) && SLINE != 1) {
             for (uint8_t i=0; i<SPR_XPOS.size(); i++) {
                 //If sprite pattern is all zero, ignore it and move on
                 if (!SPR_PAT[i*2] && !SPR_PAT[i*2 + 1])
@@ -429,7 +444,10 @@ void PPU::SCANLINE(uint16_t SLINE) {
         //Nesdev says shifters only shift starting at cycle 2? Does it even make a difference?
         BGSHIFT_ONE <<= 1;
         BGSHIFT_TWO <<= 1;
-        
+        ATTRSHIFT_ONE <<= 1;
+        ATTRSHIFT_TWO <<= 1;
+        ATTRSHIFT_ONE |= (ATTR_NEXT & 0x01);
+        ATTRSHIFT_TWO |= ((ATTR_NEXT & 0x02) >> 1);
 
         //Sprite eval - happens if either background or sprite rendering is enabled
         //n = (TICK == 65) ? OAMADDR : n; -- Need to figure out how to get OAM[OAMADDR] to get treated as sprite 0 
@@ -609,7 +627,15 @@ void PPU::PRE_SLINE_TILE_FETCH() {
     //P_LOG << "1st nametable byte: " << std::hex << int(NTABLE_BYTE) << '\n';
     //P_LOG << std::hex << int(NTABLE_BYTE) << " ";
     CYCLE(2);
-    ATTRSHIFT_ONE = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0x07));
+    ATTR_NEXT = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0x07));
+    if (((VRAM_ADDR & 0x03E0) >> 5) & 0x02) 
+        ATTR_NEXT >>= 4;
+	if ((VRAM_ADDR & 0x001F) & 0x02) 
+        ATTR_NEXT >>= 2;
+	
+    ATTR_NEXT &= 0x03;
+    ATTRSHIFT_ONE = (ATTR_NEXT & 0x01) ? 0xFF : 0;
+    //ATTRSHIFT_ONE = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0x07));
     //P_LOG << "1st attribute byte: " << std::hex << int(ATTRSHIFT_ONE) << '\n';
     CYCLE(2);
     BGSHIFT_ONE = FETCH(((PPUCTRL & 0x10) << 8) | ((NTABLE_BYTE * 16) + ((VRAM_ADDR & 0x7000) >> 12))) << 8; //fine y determines which byte of tile to get
@@ -624,7 +650,16 @@ void PPU::PRE_SLINE_TILE_FETCH() {
     //P_LOG << "2nd nametable byte: " << std::hex << int(NTABLE_BYTE) << '\n';
     //P_LOG << std::hex << int(NTABLE_BYTE) << " ";
     CYCLE(2);
-    ATTRSHIFT_TWO = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0x07));
+    ATTRSHIFT_TWO = (ATTR_NEXT & 0x02) ? 0xFF : 0;
+    ATTR_NEXT = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0x07));
+
+    if (((VRAM_ADDR & 0x03E0) >> 5) & 0x02) 
+        ATTR_NEXT >>= 4;
+	if ((VRAM_ADDR & 0x001F) & 0x02) 
+        ATTR_NEXT >>= 2;
+	
+    ATTR_NEXT &= 0x03;
+    //ATTRSHIFT_TWO = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0x07));
     //P_LOG << "1st attribute byte: " << std::hex << int(ATTRSHIFT_ONE) << '\n';
     CYCLE(2);
     BGSHIFT_ONE |= FETCH(((PPUCTRL & 0x10) << 8) | ((NTABLE_BYTE * 16) + ((VRAM_ADDR & 0x7000) >> 12))); //fine y determines which byte of tile to get
@@ -687,7 +722,7 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
         case 6:
             if (WRITE_TOGGLE) {
                 VRAM_TEMP = ((VRAM_TEMP & 0xFF00) | DATA);
-                VRAM_ADDR = VRAM_TEMP;
+                VRAM_ADDR = VRAM_TEMP & 0x3FFF;
             } else {
                 VRAM_TEMP &= 0x00FF;
                 VRAM_TEMP = ((DATA & 0x3F) << 8);

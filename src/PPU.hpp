@@ -49,17 +49,17 @@ class PPU {
         uint8_t REG_READ(uint8_t REG, long cycle);
         PPU(Cartridge& NES): PPUCTRL(0), PPUMASK(0), PPUSTATUS(0), OAMADDR(0), OAMDATA(0), PPUSCROLL(0), PPUADDR(0), PPUDATA(0), OAMDMA(0),
         VRAM_ADDR(0), VRAM_TEMP(0), Fine_x(0), BGSHIFT_ONE(0), BGSHIFT_TWO(0), ATTRSHIFT_ONE(0), ATTRSHIFT_TWO(0), ATTR_NEXT(0), ODD_FRAME(false), 
-        WRITE_TOGGLE(false), GEN_NMI(0), NMI_OCC(0), NMI_OUT(0), ROM(&NES), SuppressNmi(false), NmiDelay(false), spriteZeroRendered(false) 
-        { framePixels = new uint32_t[256 * 240]; }
+        WRITE_TOGGLE(false), GEN_NMI(0), NMI_OCC(0), NMI_OUT(0), ROM(&NES), SuppressNmi(false), NmiDelay(false), spriteZeroRendered(false), 
+        Reset(false) { framePixels = new uint32_t[256 * 240]; }
         
     private:
+        void RESET();
         void PRE_RENDER();
         void SCANLINE(uint16_t SLINE);
         void CYCLE(uint16_t N=1);
         void Y_INCREMENT();
         void X_INCREMENT();
         void PRE_SLINE_TILE_FETCH();
-        //void SPRITE_EVAL(uint16_t SLINE_NUM);
         uint8_t FETCH(uint16_t ADDR);
         void WRITE(uint16_t ADDR, uint8_t DATA);
         void nametable(std::array<uint8_t, 2048> N);
@@ -105,6 +105,7 @@ class PPU {
         bool SuppressNmi;
         bool NmiDelay;
         bool spriteZeroRendered;
+        bool Reset;
 
 };
 

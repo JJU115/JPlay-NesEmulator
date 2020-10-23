@@ -165,11 +165,15 @@ void CPU::WAIT(uint8_t N) {
 
 
 void CPU::RESET() {
+
+    CPUCycleCount = 0;
+    intCnt = 0;
     STCK_PNT -= 3;
     STAT &= 0xEF;
     PROG_CNT = ((FETCH(0xFFFD) << 8) | FETCH(0xFFFC));
     STAT |= 0x04;
     CTRL_IGNORE = 0;
+    A->FrameCount = 0;
     
     WAIT(7); 
 }
@@ -222,8 +226,9 @@ void CPU::RUN() {
             LOG << A->FireIRQ << " STAT: " << std::hex << int(STAT) << " Delay: " << IRQDelay << '\n'; 
             CLIEx = false;
         }*/
-        //LOG << "Interrupts - R: " << R << " NMI: " << int(P->GEN_NMI) << " I: " << I << " BRK: " << BRK <<  " APU: " << A->FireIRQ << '\n';
-        if (R) {
+        //LOG << "APU IRQ: " << int(A->FireIRQ) << "\n";
+        if (R || keyboard[SDL_SCANCODE_R]) { //Currently, pressing "r" key triggers a reset
+            P->Reset = true;
             RESET();
             R = false;
         } else if (P->GEN_NMI && !P->NmiDelay) {
@@ -235,9 +240,12 @@ void CPU::RUN() {
             IRQ_NMI(0xFFFE);
             I = false;
         } else if (A->FireIRQ && !(STAT & 0x04) && !IRQDelay) { //Issues with APU issued IRQs, need finer testing
-            //LOG << "IRQ\n";
+            LOG << "IRQ\n";
             IRQ_NMI(0xFFFE);
-            A->FireIRQ = false;
+            A->FireIRQ--;
+        } else if (IRQPend) {
+            IRQ_NMI(0xFFFE);
+            IRQPend = false;
         }
 
         IRQDelay = (IRQDelay) ? false : IRQDelay;
@@ -282,7 +290,7 @@ void CPU::RUN() {
                 
                 PROG_CNT = (0 | STACK_POP());
                 PROG_CNT |= (STACK_POP() << 8);
-                
+                IRQPend = (A->FireIRQ && !(STAT & 0x04));
                 cycleCount += 5;
                 break;
             //RTS
@@ -313,6 +321,7 @@ void CPU::RUN() {
                 break;
             //PLP
             case 0x28:
+                IRQPend = (A->FireIRQ && !(STAT & 0x04));
                 STAT = STACK_POP();
                 IRQDelay = true;
                 cycleCount += 3;
@@ -421,7 +430,7 @@ void CPU::RUN() {
         }*/
         //LOG << P->SLINE_NUM << "  " << P->TICK << " " << CPUCycleCount << '\n';
         WAIT(cycleCount);
-        //LOG << OPCODES[CODE] << '\t' << LOG_STREAM.str() << "\t\t" << P->SLINE_NUM << "  " << P->TICK << '\n';
+        //LOG << '\t' << LOG_STREAM.str() << " " << intCnt << '\n';
     }
 }
 
@@ -834,6 +843,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             break;
         //SEI
         case 0x78:
+            IRQPend = (A->FireIRQ && !(STAT & 0x04));
             STAT |= 0x04;
             IRQDelay = true;
             break;

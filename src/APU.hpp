@@ -378,7 +378,7 @@ class APU {
                 Pulse2Control(0), Pulse2Sweep(0), Pulse2TimeLow(0), Pulse2TimeHigh(0),
                 TriLinearCount(0), TriTimerHigh(0), TriTimerLow(0), NoiseControl(0),
                 NoiseModePeriod(0), NoiseLength(0), ControlStatus(0), FrameCount(0),
-                CpuCycles(0), ApuCycles(0), Jitter(0), JitterWrite(false), FrameInterrupt(false), FireIRQ(false) {
+                CpuCycles(0), ApuCycles(0), Jitter(0), JitterWrite(false), FrameInterrupt(false), FireIRQ(0) {
               
             AudioMixer = {};
             PulseOneEnv = {};
@@ -434,7 +434,7 @@ class APU {
         uint16_t ApuCycles;
         uint8_t Jitter;
         bool JitterWrite;
-        bool FireIRQ;
+        uint8_t FireIRQ;
         void Reg_Write(uint16_t reg, uint8_t data);
         void Channels_Out();
         bool Pulse_Out();

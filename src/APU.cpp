@@ -90,7 +90,7 @@ bool APU::Pulse_Out() {
         case 29831: //If 4-step
             if (!(FrameCount & 0xC0)) {
                 FrameInterrupt = true; //Fire IRQ
-                FireIRQ = true;
+                FireIRQ++;
             }
             break;
 
@@ -121,14 +121,14 @@ bool APU::Pulse_Out() {
 
             if (!(FrameCount & 0xC0)) {
                 FrameInterrupt = true; //Fire IRQ
-                FireIRQ = true;
+                FireIRQ++;
             }
             break;
         
         case 29833:
             if (!(FrameCount & 0xC0)) {
                 FrameInterrupt = true; //Fire IRQ
-                FireIRQ = true;
+                FireIRQ++;
             }
             break;
 
@@ -165,12 +165,12 @@ bool APU::Pulse_Out() {
         if (DMCChannel.enabled)
             DMCChannel.clock();
     }
-        
+    
     //Try checking for an empty DMC buffer here, then trigger the memory reader if necessary
     if (DMCChannel.bufferEmpty && DMCChannel.bytesRemain && DMCChannel.enabled) {
         DMCChannel.memoryRead();
         if (DMCChannel.interrupt)
-            FireIRQ = true;
+            FireIRQ++;
         return true;
     } else {
         return false;

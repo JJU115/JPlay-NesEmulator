@@ -91,13 +91,29 @@ void PPU::WRITE(uint16_t ADDR, uint8_t DATA) {
     }
 }
 
+
+void PPU::RESET() {
+    PPUCTRL = 0;
+    PPUMASK = 0;
+    WRITE_TOGGLE = false;
+    PPUSCROLL = 0;
+    PPUDATA = 0;
+    ODD_FRAME = false;
+    dots = 0;
+    PPUcount = 0;
+    Reset = false;
+}
+
+
+
+
 //Try putting in a yield statement here if cycleCount is above 3 or some other higher value
 void PPU::CYCLE(uint16_t N) {
     while(pause)
         std::this_thread::yield();
 
     while (N-- > 0) {
-        //std::this_thread::sleep_for(std::chrono::nanoseconds(186));
+        
         PPUcount++;
         TICK++;
         dots++;

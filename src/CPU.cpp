@@ -12,6 +12,7 @@ std::condition_variable CPU_COND;
 std::unique_lock<std::mutex> CPU_LCK(CPU_MTX);
 
 extern bool pause;
+extern bool Gamelog;
 extern long CPUCycleCount;
 long intCnt;
 
@@ -48,7 +49,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE) {
     uint8_t TEMP;
     //0x2008 -- 0x3FFF mirrors 0x2000 -- 0x2007 every 8 bytes
     if (ADDR >= 0x2000 && ADDR < 0x4000) {
-        LOG << "PPU register read: " << std::hex << ADDR << '\n';
+        //LOG << "PPU register read: " << std::hex << ADDR << '\n';
         return P->REG_READ((ADDR & 0x2007) % 0x2000, CPUCycleCount);
     }
 
@@ -251,13 +252,15 @@ void CPU::RUN() {
         IRQDelay = (IRQDelay) ? false : IRQDelay;
         P->NmiDelay = (P->NmiDelay) ? false : P->NmiDelay;
 
-        //LOG << std::hex << PROG_CNT << ": ";
+        if (Gamelog)
+            LOG << std::hex << PROG_CNT << ": ";
         CODE = FETCH(PROG_CNT++);
         cycleCount = 1;
         
         //Compose a string and append after EXEC
         LOG_STREAM.str(std::string());
-        //LOG << std::hex << int(CODE) << " ";
+        if (Gamelog)
+            LOG << std::hex << int(CODE) << " ";
         LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
         LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
         LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
@@ -400,7 +403,7 @@ void CPU::RUN() {
                 }
         }
         if (unofficial) {
-            std::cout << "Unofficial opcode\n";
+            std::cout << "Unofficial opcode : " << std::hex << int(CODE) << " at: " << PROG_CNT << "\n";
             break;
         }
         //At this point, all cycles of the instruction have been executed
@@ -430,7 +433,8 @@ void CPU::RUN() {
         }*/
         //LOG << P->SLINE_NUM << "  " << P->TICK << " " << CPUCycleCount << '\n';
         WAIT(cycleCount);
-        //LOG << '\t' << LOG_STREAM.str() << " " << intCnt << '\n';
+        if (Gamelog)
+            LOG << OPCODES[CODE] << "\t\t" << LOG_STREAM.str() << '\n';
     }
 }
 

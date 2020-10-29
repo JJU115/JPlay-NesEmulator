@@ -9,7 +9,7 @@ extern SDL_cond* mainPPUCond;
 extern SDL_mutex* mainThreadMutex;
 extern std::condition_variable CPU_COND;
 extern bool pause;
-extern bool log;
+extern bool Gamelog;
 extern long CPUCycleCount;
 long PPUcount;
 
@@ -203,8 +203,8 @@ void PPU::GENERATE_SIGNAL() {
         //Start CPU cycle count over
         while (SLINE_NUM < 262) { //Every scanline does the 256 increment and 257 copy but as with pre-render, not sure if it happens in the vblank period, so commented here for now
             CYCLE(341);
-            TICK = 0;
-            ++SLINE_NUM;
+            TICK = 0;       //The whole vblank section is a candidate for performance boost by putting it in idle mode and forgoing 
+            ++SLINE_NUM;    //calls to CYCLE with just cyclecount increments
         }
             
         NMI_OCC = 0;
@@ -559,9 +559,20 @@ void PPU::SCANLINE(uint16_t SLINE) {
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
                 CYCLE(2);
             } else { //8*16 sprites
-                SPR_PAT_ADDR = (((OAM_SECONDARY[i*4 + 1] & 0x01) << 12) | (((OAM_SECONDARY[i*4 + 1] & 0xFE) >> 1) * 16));
-                SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (23 - SLINE - OAM_SECONDARY[i*4]) : (SLINE - OAM_SECONDARY[i*4]); //True part of ternary may need to be 22
-                    
+                SPR_PAT_ADDR = (((OAM_SECONDARY[i*4 + 1] & 0x01) << 12) | (((OAM_SECONDARY[i*4 + 1] & 0xFE)) * 16));
+
+                //The SLINE - OAM_SECONDARY is recalculated a lot, consider assigning it to a variable at start of loop iteration
+                if (SPR_ATTRS.back() & 0x80) {
+                    SPR_PAT_ADDR += 23 - (SLINE - OAM_SECONDARY[i*4]) - ((SLINE - OAM_SECONDARY[i*4]) > 7)*8;
+                } else {
+                    //If current scanline less the y pos is > 7 then add 8 to the address
+                    SPR_PAT_ADDR += ((SLINE - OAM_SECONDARY[i*4]) > 7)*8 + (SLINE - OAM_SECONDARY[i*4]);
+                }
+
+                //SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (23 - (SLINE - OAM_SECONDARY[i*4])) : (SLINE - OAM_SECONDARY[i*4]); 
+                if (Gamelog) {
+                    P_LOG << "Fetching Sprite at: " <<  std::hex << SPR_PAT_ADDR << " for sline " << int(SLINE) << '\n';
+                }
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 CYCLE(2);
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
@@ -610,11 +621,10 @@ void PPU::Y_INCREMENT() {
             if (y == 29) {
                 y = 0;     
                 VRAM_ADDR ^= 0x0800;
-                VRAM_ADDR = (VRAM_ADDR & ~0x03E0) | (y << 5);
             } else {
                 y = (y == 31) ? 0 : (y + 1);
-                VRAM_ADDR = (VRAM_ADDR & ~0x03E0) | (y << 5);
             }
+            VRAM_ADDR = (VRAM_ADDR & ~0x03E0) | (y << 5);
         }
     }
 }
@@ -687,13 +697,14 @@ void PPU::PRE_SLINE_TILE_FETCH() {
     //P_LOG << "Tile 2 done\n";
 }
 
+
 //CPU will call this function
 void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
     //P_LOG << "Writing " << int(DATA) << " to register" << int(REG) << '\n';
     //P_LOG << "Toggle: " << WRITE_TOGGLE << '\n';
     uint8_t T;
     switch (REG) {
-        case 0: //fine-x is affected, but no x scrolling implemented right now
+        case 0:
             //T = PPUCTRL & 0x10;
             if (!(PPUCTRL & 0x80) && (DATA & 0x80) && (PPUSTATUS & 0x80)) {
                 GEN_NMI = 1;
@@ -721,13 +732,13 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
             break;
         case 4:
             OAMDATA = DATA;
+            //P_LOG << "Wrote " << std::hex << int(DATA) << " OAMADDR: " << std::hex << int(OAMADDR) << '\n';
             OAM_PRIMARY[OAMADDR++] = DATA;
-            //P_LOG << "Wrote " << std::hex << int(DATA) << " OAMADDR: " << std::hex << int(OAMADDR-1) << '\n';
             break;
         case 5:
             if (WRITE_TOGGLE) {
                 VRAM_TEMP &= 0x0C1F;
-                VRAM_TEMP |= ((DATA & 0x07) << 12) | ((DATA & 0xF8) << 5);
+                VRAM_TEMP |= ((DATA & 0x07) << 12) | ((DATA & 0xF8) << 2);
             } else {
                 VRAM_TEMP &= 0xFFE0;
                 VRAM_TEMP |= ((DATA & 0xF8) >> 3);
@@ -779,7 +790,7 @@ uint8_t PPU::REG_READ(uint8_t REG, long cycle) {
         case 3:
             break;
         case 4: //Attempting to read 0x2004 before cycle 65 on visible scanlines returns 0xFF
-            //P_LOG << "Read from " << std::hex << int(OAMADDR) << " Get: " << std::hex << int(OAM_PRIMARY[OAMADDR]) << '\n';
+            P_LOG << "Read from " << std::hex << int(OAMADDR) << " Get: " << std::hex << int(OAM_PRIMARY[OAMADDR]) << '\n';
             return OAM_PRIMARY[OAMADDR];
         case 5:
             break;

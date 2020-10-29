@@ -42,7 +42,7 @@ uint16_t MMC1::PPU_READ(uint16_t ADDR, bool NT) {
 
 void MMC1::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
 
-    if (PRAM && (ADDR >= 0x6000) && (ADDR <= 0x7FFF)) {
+    if ((ADDR >= 0x6000) && (ADDR <= 0x7FFF)) {
         PRG_RAM[ADDR % 0x6000] = VAL;
         return;
     }

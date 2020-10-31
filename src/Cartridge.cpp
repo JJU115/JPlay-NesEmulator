@@ -1,6 +1,8 @@
 #include "Cartridge.hpp"
 #include "NROM.hpp"
 #include "MMC1.hpp"
+#include "UxROM.hpp"
+#include "CxROM.hpp"
 #include <fstream>
 #include <iostream>
 
@@ -35,7 +37,7 @@ void Cartridge::LOAD(char *FILE) {
 
 
     std::cout << "Header read\n";
-    uint8_t MAP_NUM = (((H[6] & 0xF0) >> 4) | (H[7] & 0xF0));
+    uint8_t MAP_NUM = ((H[6] & 0xF0) >> 4); //For now, only mappers 0-F are supported, which is more than what's planned for this emulator anyway 
 
     //Copy PRG and CHR data to internal vectors
     PRG_ROM.resize(16 * 1024 * H[4]);
@@ -62,7 +64,11 @@ void Cartridge::LOAD(char *FILE) {
     if (MAP_NUM == 0) 
         M = new NROM(H[4], H[5], (H[6] & 0x01)); //0 = horizontal mirror, 1 = vertical mirror
     else if (MAP_NUM == 1)
-        M = new MMC1(H[4], H[5]); //Using NES 2.0 flag 10 for PRG RAM detection
+        M = new MMC1(H[4], H[5]);
+    else if (MAP_NUM == 2)
+        M = new UxROM(H[4], H[6] & 0x01);
+    else if (MAP_NUM == 3)
+        M = new CxROM(H[4], H[5], H[6] & 0x01);
 
 
     CPU_LINE1.close();
@@ -77,7 +83,7 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
             return M->CPU_READ(ADDR);
 
         if (M->CPU_READ(ADDR) >= PRG_ROM.size())
-            std::cout << "OB Read " << ADDR << " --- " << M->CPU_READ(ADDR) << '\n';
+            std::cout << "PRG OB Read " << ADDR << " --- " << M->CPU_READ(ADDR) << '\n';
 
         return PRG_ROM[M->CPU_READ(ADDR)];
         
@@ -97,8 +103,8 @@ uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R, bool NT_M) {
         if (ChrRam)
             return CHR_ROM[ADDR];
         
-        if (M->PPU_READ(ADDR, false) >= CHR_ROM.size()) 
-            std::cout << "OB Read " << ADDR << " --- " << M->PPU_READ(ADDR, false) << '\n';
+        //if (M->PPU_READ(ADDR, false) >= CHR_ROM.size()) 
+         //   std::cout << "CHR OB Read " << ADDR << " --- " << M->PPU_READ(ADDR, false) << '\n';
         
 
         return CHR_ROM[M->PPU_READ(ADDR, false)]; 

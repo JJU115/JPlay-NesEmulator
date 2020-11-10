@@ -10,11 +10,14 @@
 class Mapper {
     public:
         Mapper() {}
-        Mapper(uint16_t P, uint16_t C): PRG_BANKS(P), CHR_BANKS(C) {}
+        Mapper(uint16_t P, uint16_t C): PRG_BANKS(P), CHR_BANKS(C), Irq(false) {}
         virtual uint32_t CPU_READ(uint16_t ADDR) = 0;
-        virtual uint16_t PPU_READ(uint16_t ADDR, bool NT) = 0;
+        virtual uint32_t PPU_READ(uint16_t ADDR, bool NT) = 0;
         virtual void CPU_WRITE(uint16_t ADDR, uint8_t VAL) = 0;
         virtual void PPU_WRITE(uint16_t ADDR) = 0;
+        virtual bool Scanline() { return false; }
+
+        bool Irq;
     protected:
         uint8_t PRG_BANKS;  //In 16KB
         uint8_t CHR_BANKS;  //In 8KB
@@ -22,7 +25,7 @@ class Mapper {
         enum MirrorMode {SingleLower, SingleUpper, Vertical, Horizontal} NT_MIRROR;
 
         //Right now the value 1 is vertical and the value 0 is horizontal, should use an enum instead for clarity
-        uint16_t SelectNameTable(uint32_t ADDR, MirrorMode M) {
+        uint16_t SelectNameTable(uint16_t ADDR, MirrorMode M) {
 
             switch (M) {
                 case Vertical:

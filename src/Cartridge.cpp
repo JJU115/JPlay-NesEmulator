@@ -3,6 +3,7 @@
 #include "MMC1.hpp"
 #include "UxROM.hpp"
 #include "CxROM.hpp"
+#include "MMC3.hpp"
 #include <fstream>
 #include <iostream>
 
@@ -69,9 +70,12 @@ void Cartridge::LOAD(char *FILE) {
         M = new UxROM(H[4], H[6] & 0x01);
     else if (MAP_NUM == 3)
         M = new CxROM(H[4], H[5], H[6] & 0x01);
+    else if (MAP_NUM == 4)
+        M = new MMC3(H[4], H[5]);
 
 
     CPU_LINE1.close();
+    FireIrq = false;
     delete DATA_BUF;
 }
 
@@ -84,7 +88,7 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
 
         if (M->CPU_READ(ADDR) >= PRG_ROM.size())
             std::cout << "PRG OB Read " << ADDR << " --- " << M->CPU_READ(ADDR) << '\n';
-
+        //std::cout << "PRG Read: " << ADDR << '\n';
         return PRG_ROM[M->CPU_READ(ADDR)];
         
     } else {
@@ -103,9 +107,8 @@ uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R, bool NT_M) {
         if (ChrRam)
             return CHR_ROM[ADDR];
         
-        //if (M->PPU_READ(ADDR, false) >= CHR_ROM.size()) 
-         //   std::cout << "CHR OB Read " << ADDR << " --- " << M->PPU_READ(ADDR, false) << '\n';
-        
+        if (M->PPU_READ(ADDR, false) >= CHR_ROM.size()) 
+            std::cout << "CHR OB Read " << ADDR << " --- " << M->PPU_READ(ADDR, false) << '\n';
 
         return CHR_ROM[M->PPU_READ(ADDR, false)]; 
 
@@ -115,4 +118,15 @@ uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R, bool NT_M) {
     }
 
     return 0;
+}
+
+
+//If an Irq is pending, FireIrq is true, then keep it true until acknowledged by CPU
+bool Cartridge::Scanline() {
+    if (FireIrq)
+        M->Scanline();
+    else if (M->Scanline()) { 
+        FireIrq = true;
+        M->Irq = false;
+    } 
 }

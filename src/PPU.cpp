@@ -530,6 +530,10 @@ void PPU::SCANLINE(uint16_t SLINE) {
         VRAM_ADDR &= 0xFBE0;
         VRAM_ADDR |= (VRAM_TEMP & 0x041F);
     }
+
+    //Call scanline function, only for MMC3 currently
+    if ((PPUCTRL & 0x38) == 0x08)
+        ROM->Scanline();
    
     //Cycles 257-320 - Fetch tile data for sprites on next scanline - OAMADDR register determines which is sprite 0
     SPR_ATTRS.clear();
@@ -601,6 +605,9 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
     //Cycle 321-336
     PRE_SLINE_TILE_FETCH();
+
+    if ((PPUCTRL & 0x38) == 0x10)
+        ROM->Scanline();
 
     //Cycle 337-340
     CYCLE(4); //Supposed to be nametable fetches identical to fetches at start of next scanline

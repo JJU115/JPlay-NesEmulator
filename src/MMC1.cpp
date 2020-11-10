@@ -25,7 +25,7 @@ uint32_t MMC1::CPU_READ(uint16_t ADDR) {
 //There are four mirroring possibilities here: vertical, horizontal, one (low), one (high) 
 //Should really just use an enum
 //Need to implement proper selection based on CHR bank positions
-uint16_t MMC1::PPU_READ(uint16_t ADDR, bool NT) {
+uint32_t MMC1::PPU_READ(uint16_t ADDR, bool NT) {
     if (NT)
         return SelectNameTable(ADDR, static_cast<MirrorMode>(CONTROL & 0x03));
 

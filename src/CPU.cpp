@@ -236,10 +236,6 @@ void CPU::RUN() {
             //LOG << "NMI\n";
             P->GEN_NMI = 0;
             IRQ_NMI(0xFFFA);
-        } else if (I && !BRK && !(STAT & 0x04) && !IRQDelay) {
-            //LOG << "IRQ\n";
-            IRQ_NMI(0xFFFE);
-            I = false;
         } else if (A->FireIRQ && !(STAT & 0x04) && !IRQDelay) { //Issues with APU issued IRQs, need finer testing
             LOG << "IRQ\n";
             IRQ_NMI(0xFFFE);
@@ -247,6 +243,9 @@ void CPU::RUN() {
         } else if (IRQPend) {
             IRQ_NMI(0xFFFE);
             IRQPend = false;
+        } else if (ROM->FireIrq && !(STAT & 0x04)) {
+            ROM->FireIrq = false;
+            IRQ_NMI(0xFFFE);
         }
 
         IRQDelay = (IRQDelay) ? false : IRQDelay;
@@ -282,7 +281,7 @@ void CPU::RUN() {
                 PROG_CNT = ((FETCH(0xFFFF) << 8) | FETCH(0xFFFE));
                 STAT |= 0x04;
  
-                I = BRK = true;
+                //I = BRK = true;
                 cycleCount += 6;
                 break;
             //RTI

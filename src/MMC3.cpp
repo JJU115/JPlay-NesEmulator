@@ -19,7 +19,6 @@ uint32_t MMC3::PPU_READ(uint16_t ADDR, bool NT) {
         return SelectNameTable(ADDR, Mirroring);
 
     return (ChrBanks[ADDR / 0x0400] * 1024 + (ADDR % 0x0400));
-
 }
 
 
@@ -55,24 +54,24 @@ void MMC3::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
                         break;
 
                 }
-                /*if ((VAL == 0xF8) && (BankSelect == 0)) {
-                    std::cout << "Wrote " << int(VAL) << " to bankData\n";
-                    std::cout << "CHR banks: ";
-                    for (int j=0; j<8; j++)
-                        std::cout << int(ChrBanks[j]) << " ";
-                    std::cout << '\n';
-                }*/
+                
+                /*std::cout << "Wrote " << int(VAL) << " to bankData\n";
+                std::cout << "CHR banks: ";
+                for (int j=0; j<8; j++)
+                    std::cout << int(ChrBanks[j]) << " ";
+                std::cout << '\n';
+                */
             } else {
                 //Even
                 //BankSelect = VAL;
                 TargetBank = VAL & 0x07;
-                if (PrgMode ^ (VAL & 0x40)) {
+                if (PrgMode ^ bool(VAL & 0x40)) {
                     PrgBanks[0] ^= PrgBanks[2];
                     PrgBanks[2] ^= PrgBanks[0];
                     PrgBanks[0] ^= PrgBanks[2];
                 }
                 
-                if (ChrMode ^ (VAL & 0x80)) {
+                if (ChrMode ^ bool(VAL & 0x80)) {
                     for (int i=0; i<4; i++) {
                         ChrBanks[i] ^= ChrBanks[i+4];
                         ChrBanks[i+4] ^= ChrBanks[i];

@@ -213,7 +213,8 @@ void PPU::GENERATE_SIGNAL() {
         //auto t2 = std::chrono::high_resolution_clock::now();
         //std::cout << "Frame time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << '\n';
         //Get main to render the frame
-       // nametable(VRAM);
+        //if (Gamelog)
+        //    nametable(VRAM);
         //SDL_CondSignal(mainPPUCond);
         /*for (uint8_t i : OAM_PRIMARY)
             P_LOG << int(i) << " ";*/
@@ -371,8 +372,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
             case 6:
                 //Fetch ptable low
                 PTABLE_LOW = FETCH(((PPUCTRL & 0x10) << 8) | ((NTABLE_BYTE * 16) + ((VRAM_ADDR & 0x7000) >> 12)));
-                //if (targ)
-                //    P_LOG << "PTable low: " << std::hex << int(PTABLE_LOW) << '\n';
+                //if ((Gamelog) && (SLINE == 176))
+                //    P_LOG << "Sline " << SLINE << " PTable low: " << std::hex << int(PTABLE_LOW) << " at "  << (((PPUCTRL & 0x10) << 8) | ((NTABLE_BYTE * 16) + ((VRAM_ADDR & 0x7000) >> 12))) << '\n';
                 break;
             default:
                 break;
@@ -532,8 +533,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
     }
 
     //Call scanline function, only for MMC3 currently
-    if ((PPUCTRL & 0x38) == 0x08)
-        ROM->Scanline();
+   // if ((PPUCTRL & 0x38) == 0x08)
+    //    ROM->Scanline();
    
     //Cycles 257-320 - Fetch tile data for sprites on next scanline - OAMADDR register determines which is sprite 0
     SPR_ATTRS.clear();
@@ -574,9 +575,9 @@ void PPU::SCANLINE(uint16_t SLINE) {
                 }
 
                 //SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (23 - (SLINE - OAM_SECONDARY[i*4])) : (SLINE - OAM_SECONDARY[i*4]); 
-                if (Gamelog) {
+                /*if (Gamelog) {
                     P_LOG << "Fetching Sprite at: " <<  std::hex << SPR_PAT_ADDR << " for sline " << int(SLINE) << '\n';
-                }
+                }*/
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 CYCLE(2);
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
@@ -606,8 +607,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
     //Cycle 321-336
     PRE_SLINE_TILE_FETCH();
 
-    if ((PPUCTRL & 0x38) == 0x10)
-        ROM->Scanline();
+    //if ((PPUCTRL & 0x38) == 0x10)
+    ROM->Scanline();
 
     //Cycle 337-340
     CYCLE(4); //Supposed to be nametable fetches identical to fetches at start of next scanline
@@ -879,15 +880,15 @@ void PPU::SPRITE_EVAL(uint16_t SLINE_NUM) {
 void PPU::nametable(std::array<uint8_t, 2048> N) {
     for (int i=0; i<32; i++) {
         for (int j=0; j<32; j++) {
-            P_LOG << std::hex << int(N[i*32 + j]) << " "; 
+            P_LOG << std::hex << int(N[i*32 + j + 1024]) << " "; 
         }
         P_LOG << '\n';
     }
-    P_LOG << "\n\nPalette:\n";
+    /*P_LOG << "\n\nPalette:\n";
 
     for (int k=0; k<25; k++) {
         P_LOG << std::hex << int(PALETTES[k]) << " ";
-    }
+    }*/
 
     P_LOG << "\n\n\n";
 }

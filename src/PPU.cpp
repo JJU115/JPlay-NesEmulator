@@ -281,6 +281,7 @@ void PPU::PRE_RENDER() {
     //std::cout << "Pre render done\n";
     //auto t2 = std::chrono::high_resolution_clock::now();
     //std::cout << "Pre-render time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << '\n';
+    ROM->Scanline();
 }
 
 
@@ -618,7 +619,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
 
 void PPU::Y_INCREMENT() {
-
+    bool a12 = VRAM_ADDR & 0x1000;
     if ((PPUMASK & 0x08) || (PPUMASK & 0x10)) {
         if ((VRAM_ADDR & 0x7000) != 0x7000)
             VRAM_ADDR += 0x1000;
@@ -639,6 +640,7 @@ void PPU::Y_INCREMENT() {
 
 
 void PPU::X_INCREMENT() {
+    bool a12 = VRAM_ADDR & 0x1000;
     if ((PPUMASK & 0x08) || (PPUMASK & 0x10)) {
         if ((VRAM_ADDR & 0x001F) == 31) { 
             VRAM_ADDR &= ~0x001F;      
@@ -757,6 +759,10 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
         case 6:
             if (WRITE_TOGGLE) {
                 VRAM_TEMP = ((VRAM_TEMP & 0xFF00) | DATA);
+
+                if (!(VRAM_ADDR & 0x1000) && (VRAM_TEMP & 0x1000))
+                    ROM->Scanline();
+
                 VRAM_ADDR = VRAM_TEMP & 0x3FFF;
             } else {
                 VRAM_TEMP &= 0x00FF;

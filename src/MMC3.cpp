@@ -97,13 +97,17 @@ void MMC3::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
                 Mirroring = (VAL & 0x01) ? Horizontal : Vertical;
             break;
         case 0xC000:
-            if (ADDR & 1)
+            if (ADDR & 1) {
                 IrqReload = true;
-            else
+                Counter = 0;
+            } else
                 IrqLatch = VAL;
+               
             break;
         case 0xE000:
             IrqEnable = (ADDR & 1);
+            if (!IrqEnable)
+                Irq = false;
             break;
     }
 
@@ -127,5 +131,6 @@ bool MMC3::Scanline() {
     } else {
         --Counter;
     }
+
     return Irq;
 }

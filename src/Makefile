@@ -6,13 +6,13 @@ SDL_INCLUDE = -IC:/SDL/i686-w64-mingw32/include/SDL2
 # If your compiler is a bit older you may need to change -std=c++11 to -std=c++0x
 CXXFLAGS = -g -c -std=c++11 $(SDL_INCLUDE)
 LDFLAGS = -lmingw32 -mwindows -mconsole $(SDL_LIB)
-FILES = APU.o Display.o CPU.o PPU.o NES.o Cartridge.o NROM.o MMC1.o UxROM.o CxROM.o MMC3.o AxROM.o
+FILES = APU.o Display.o CPU.o PPU.o NES.o Cartridge.o NROM.o MMC1.o UxROM.o CxROM.o MMC3.o AxROM.o MMC2.o
 EXE = NES.exe
 
 all: $(EXE)
 
 
-$(EXE): clean Display.o CPU.o PPU.o APU.o NES.o Cartridge.o NROM.o MMC1.o UxROM.o CxROM.o MMC3.o AxROM.o
+$(EXE): clean Display.o CPU.o PPU.o APU.o NES.o Cartridge.o NROM.o MMC1.o UxROM.o CxROM.o MMC3.o AxROM.o MMC2.o
 
 	$(CXX) $(DBG) $(FILES) $(LDFLAGS) -o $@
 
@@ -61,6 +61,10 @@ MMC3.o : MMC3.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@
 
 AxROM.o : AxROM.cpp
+
+	$(CXX) $(CXXFLAGS) $< -o $@
+
+MMC2.o : MMC2.cpp
 
 	$(CXX) $(CXXFLAGS) $< -o $@
 

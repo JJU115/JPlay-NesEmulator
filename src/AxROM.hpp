@@ -5,6 +5,8 @@
 #include "Mapper.hpp"
 
 
+//iNES Mapper #7 - AxROM
+
 
 class AxROM : public Mapper {
     public:

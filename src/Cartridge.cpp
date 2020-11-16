@@ -5,6 +5,7 @@
 #include "CxROM.hpp"
 #include "MMC3.hpp"
 #include "AxROM.hpp"
+#include "MMC2.hpp"
 #include <fstream>
 #include <iostream>
 
@@ -75,6 +76,8 @@ void Cartridge::LOAD(char *FILE) {
         M = new MMC3(H[4], H[5]);
     else if (MAP_NUM == 7)
         M = new AxROM(H[4], H[5]);
+    else if (MAP_NUM == 9)
+        M = new MMC2(H[4], H[5]);
 
 
     CPU_LINE1.close();

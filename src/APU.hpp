@@ -365,7 +365,7 @@ struct Mixer {
     std::array<double, 203> tndTable; //Reduce size of this since noise channel output no longer used to calculate index 
     double mixAudio(long sampleNum) {
         double pulseOut = pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)]; 
-        double tndOut = tndTable[3 * tri->getSample() + dmc->output] + noise->getSample();
+        double tndOut = tndTable[3 * tri->getSample() + dmc->output]; //Noise not used right now due to being extremely buggy
         return pulseOut + tndOut;// + noise->getSample();
     }
 };

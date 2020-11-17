@@ -6,6 +6,7 @@
 #include "MMC3.hpp"
 #include "AxROM.hpp"
 #include "MMC2.hpp"
+#include "GxROM.hpp"
 #include <fstream>
 #include <iostream>
 
@@ -40,7 +41,7 @@ void Cartridge::LOAD(char *FILE) {
 
 
     std::cout << "Header read\n";
-    uint8_t MAP_NUM = ((H[6] & 0xF0) >> 4); //For now, only mappers 0-F are supported, which is more than what's planned for this emulator anyway 
+    uint8_t MAP_NUM = ((H[6] & 0xF0) >> 4) | (H[7] & 0xF0); //Usage of byte 7 only needed for mapper 66
 
     //Copy PRG and CHR data to internal vectors
     PRG_ROM.resize(16 * 1024 * H[4]);
@@ -78,6 +79,8 @@ void Cartridge::LOAD(char *FILE) {
         M = new AxROM(H[4], H[5]);
     else if (MAP_NUM == 9)
         M = new MMC2(H[4], H[5]);
+    else if (MAP_NUM == 66)
+        M = new GxROM(H[4], H[5], (H[6] & 0x01));
 
 
     CPU_LINE1.close();

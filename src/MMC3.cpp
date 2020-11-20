@@ -5,7 +5,7 @@
 uint32_t MMC3::CPU_READ(uint16_t ADDR) {
     if ((ADDR >= 0x6000) && (ADDR <= 0x7FFF))
         return PRG_RAM[ADDR % 0x6000];
-
+   
     return PrgBanks[(ADDR - 0x8000) / 0x2000] * (PRG_BANK_SIZE / 2) + (ADDR % 0x2000);
 
 }
@@ -56,11 +56,10 @@ void MMC3::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
                 }
                 
                 /*std::cout << "Wrote " << int(VAL) << " to bankData\n";
-                std::cout << "CHR banks: ";
-                for (int j=0; j<8; j++)
-                    std::cout << int(ChrBanks[j]) << " ";
-                std::cout << '\n';
-                */
+                std::cout << "PRG banks: ";
+                for (int j=0; j<4; j++)
+                    std::cout << int(PrgBanks[j]) << " ";
+                std::cout << '\n';*/
             } else {
                 //Even
                 //BankSelect = VAL;
@@ -106,8 +105,7 @@ void MMC3::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
             break;
         case 0xE000:
             IrqEnable = (ADDR & 1);
-            if (!IrqEnable)
-                Irq = false;
+            Irq = (IrqEnable) ? Irq : false;
             break;
     }
 
@@ -120,17 +118,17 @@ void MMC3::PPU_WRITE(uint16_t ADDR) {
 }
 
 
-bool MMC3::Scanline() {
+void MMC3::Scanline() {
 
     if (IrqReload) {
         Counter = IrqLatch;
         IrqReload = false;
+        Irq = (Counter == 0);
     } else if (Counter == 0) {
         Counter = IrqLatch;
-        Irq = (Irq) ? Irq : IrqEnable; //If Irq is already true then keep it true
-    } else {
-        --Counter;
+        Irq = IrqEnable && (!Set);
+        Set = Irq;
+    } else if (--Counter == 0) {
+        Irq = IrqEnable;
     }
-
-    return Irq;
 }

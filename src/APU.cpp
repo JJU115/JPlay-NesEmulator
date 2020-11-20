@@ -475,6 +475,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             FrameCount = data;
             FrameInterrupt = (data & 0x40) ? false : FrameInterrupt;
             CpuCycles = 0; //Passes for a frame counter reset?
+            FireIRQ = 0;
             if (data & 0x80) {
                 //Generate half and quarter frame signals
                 PulseOne.pulseEnvelope->clock();

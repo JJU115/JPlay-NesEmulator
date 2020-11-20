@@ -21,7 +21,4 @@ class GxROM : public Mapper {
 };
 
 
-
-
-
 #endif

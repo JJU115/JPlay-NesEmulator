@@ -237,14 +237,16 @@ void CPU::RUN() {
             P->GEN_NMI = 0;
             IRQ_NMI(0xFFFA);
         } else if (A->FireIRQ && !(STAT & 0x04) && !IRQDelay) { //Issues with APU issued IRQs, need finer testing
-            LOG << "IRQ\n";
+            LOG << "APU IRQ\n";
             IRQ_NMI(0xFFFE);
             A->FireIRQ--;
         } else if (IRQPend) {
+           // LOG << "IRQ\n";
             IRQ_NMI(0xFFFE);
             IRQPend = false;
-        } else if (ROM->FireIrq && !(STAT & 0x04)) {
-            ROM->FireIrq = false;
+        } else if (*(ROM->FireIrq) && !(STAT & 0x04)) {
+           // LOG << "ROM IRQ\n";
+            *(ROM->FireIrq) = false;
             IRQ_NMI(0xFFFE);
         }
 
@@ -432,8 +434,10 @@ void CPU::RUN() {
         }*/
         //LOG << P->SLINE_NUM << "  " << P->TICK << " " << CPUCycleCount << '\n';
         WAIT(cycleCount);
-        if (Gamelog)
-            LOG << OPCODES[CODE] << "\t\t" << LOG_STREAM.str() << '\n';
+        if (Gamelog) {
+            LOG << OPCODES[CODE] << "\t\t" << LOG_STREAM.str() << '\t';
+            LOG << "Counter: " << int(ROM->M->Counter) << " Fire IRQ: " << *(ROM->FireIrq) << '\n';
+        }
     }
 }
 
@@ -462,7 +466,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
         //Immediate
         case 0:
             VAL = FETCH(PROG_CNT++, true);
-            LOG << " " << std::hex << int(VAL) << " ";
+            //LOG << " " << std::hex << int(VAL) << " ";
             break;
         //Zero-Page
         case 1:

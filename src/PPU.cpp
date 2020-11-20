@@ -281,7 +281,8 @@ void PPU::PRE_RENDER() {
     //std::cout << "Pre render done\n";
     //auto t2 = std::chrono::high_resolution_clock::now();
     //std::cout << "Pre-render time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << '\n';
-    ROM->Scanline();
+    if (PPUMASK & 0x18)
+        ROM->Scanline();
 }
 
 
@@ -608,8 +609,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
     //Cycle 321-336
     PRE_SLINE_TILE_FETCH();
 
-    //if ((PPUCTRL & 0x38) == 0x10)
-    ROM->Scanline();
+    if (PPUMASK & 0x18)
+        ROM->Scanline();
 
     //Cycle 337-340
     CYCLE(4); //Supposed to be nametable fetches identical to fetches at start of next scanline
@@ -712,7 +713,7 @@ void PPU::PRE_SLINE_TILE_FETCH() {
 void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
     //P_LOG << "Writing " << int(DATA) << " to register" << int(REG) << '\n';
     //P_LOG << "Toggle: " << WRITE_TOGGLE << '\n';
-    uint8_t T;
+    uint16_t T;
     switch (REG) {
         case 0:
             //T = PPUCTRL & 0x10;
@@ -759,11 +760,12 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
         case 6:
             if (WRITE_TOGGLE) {
                 VRAM_TEMP = ((VRAM_TEMP & 0xFF00) | DATA);
-
-                if (!(VRAM_ADDR & 0x1000) && (VRAM_TEMP & 0x1000))
-                    ROM->Scanline();
-
+                T = VRAM_ADDR & 0x1000;
+        
                 VRAM_ADDR = VRAM_TEMP & 0x3FFF;
+                if ((T == 0) && (VRAM_ADDR & 0x1000))
+                    ROM->Scanline();
+                
             } else {
                 VRAM_TEMP &= 0x00FF;
                 VRAM_TEMP = ((DATA & 0x3F) << 8);
@@ -772,7 +774,10 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
             break;
         case 7:
             WRITE(VRAM_ADDR, DATA);
+            T = VRAM_ADDR & 0x1000;
             VRAM_ADDR += ((PPUCTRL & 0x04) != 0) ? 32 : 1;
+            if ((T == 0) && (VRAM_ADDR & 0x1000))
+                ROM->Scanline();
             break;
     }
    // P_LOG << "PPUSCROLL: " << std::hex << int(PPUSCROLL) << '\n';
@@ -804,7 +809,7 @@ uint8_t PPU::REG_READ(uint8_t REG, long cycle) {
         case 3:
             break;
         case 4: //Attempting to read 0x2004 before cycle 65 on visible scanlines returns 0xFF
-            P_LOG << "Read from " << std::hex << int(OAMADDR) << " Get: " << std::hex << int(OAM_PRIMARY[OAMADDR]) << '\n';
+            //P_LOG << "Read from " << std::hex << int(OAMADDR) << " Get: " << std::hex << int(OAM_PRIMARY[OAMADDR]) << '\n';
             return OAM_PRIMARY[OAMADDR];
         case 5:
             break;
@@ -812,9 +817,12 @@ uint8_t PPU::REG_READ(uint8_t REG, long cycle) {
             break;
         case 7: {
             uint8_t TEMP = data_buf;
+            uint16_t T = VRAM_ADDR & 0x1000;
             bool palRead = (VRAM_ADDR > 0x3EFF);
             data_buf = FETCH(VRAM_ADDR);
             VRAM_ADDR += ((PPUCTRL & 0x04) != 0) ? 32 : 1;
+            if ((T == 0) && (VRAM_ADDR & 0x1000))
+                ROM->Scanline();
             return (palRead) ? data_buf : TEMP; }
     }
 

@@ -13,7 +13,7 @@ class MMC3 : public Mapper {
     public:
         //Assuming IRQs are disabled at startup
         MMC3(uint8_t P, uint8_t C) : Mapper(2*P, 8*C), BankSelect(0), TargetBank(0), BankData(0), ChrInversion(false), PrgInversion(false),
-        ChrMode(false), PrgMode(false), Mirroring(Vertical), IrqLatch(0), IrqReload(false), IrqEnable(false), Counter(0)
+        ChrMode(false), PrgMode(false), Mirroring(Vertical), IrqLatch(0), IrqReload(false), IrqEnable(false), Set(false)
         { 
             PrgBanks[1] = PRG_BANKS - 2;
             PrgBanks[2] = PRG_BANKS - 2;
@@ -21,12 +21,14 @@ class MMC3 : public Mapper {
 
             for (int i=1; i<8; i++)
                 ChrBanks[i] = i; 
+
+            Irq = false;
         }
         uint32_t CPU_READ(uint16_t ADDR);
         uint32_t PPU_READ(uint16_t ADDR, bool NT);
         void CPU_WRITE(uint16_t ADDR, uint8_t VAL);
         void PPU_WRITE(uint16_t ADDR);
-        bool Scanline();
+        void Scanline();
 
     private:
         std::array<uint8_t, 8> ChrBanks; //Each index represents a 1KB bank going from $0000 to $1FFF
@@ -46,7 +48,8 @@ class MMC3 : public Mapper {
         //IRQ flags
         bool IrqReload;
         bool IrqEnable;
-        uint8_t Counter;
+        bool Set;
+        //uint8_t Counter;
 
         std::array<uint8_t, 8 * 1024> PRG_RAM; 
 

@@ -84,7 +84,7 @@ void Cartridge::LOAD(char *FILE) {
 
 
     CPU_LINE1.close();
-    FireIrq = false;
+    FireIrq = &(M->Irq);
     delete DATA_BUF;
 }
 
@@ -95,10 +95,12 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
         if (ADDR < 0x8000)
             return M->CPU_READ(ADDR);
 
-        if (M->CPU_READ(ADDR) >= PRG_ROM.size())
+        uint32_t a = M->CPU_READ(ADDR);
+        if (a >= PRG_ROM.size())
             std::cout << "PRG OB Read " << ADDR << " --- " << M->CPU_READ(ADDR) << '\n';
-        //std::cout << "PRG Read: " << ADDR << '\n';
-        return PRG_ROM[M->CPU_READ(ADDR)];
+        
+        //std::cout << "PRG Read: " << ADDR << '\n'
+        return PRG_ROM[a];
         
     } else {
         M->CPU_WRITE(ADDR, VAL); //possible cases here differ by mapper, this will have to change when implementing more of them 
@@ -131,11 +133,6 @@ uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R, bool NT_M) {
 
 
 //If an Irq is pending, FireIrq is true, then keep it true until acknowledged by CPU
-bool Cartridge::Scanline() {
-    if (FireIrq)
-        M->Scanline();
-    else if (M->Scanline()) { 
-        FireIrq = true;
-        M->Irq = false;
-    } 
+void Cartridge::Scanline() {
+    M->Scanline();
 }

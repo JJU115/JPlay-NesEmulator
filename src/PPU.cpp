@@ -268,8 +268,12 @@ void PPU::PRE_RENDER() {
             }
         }
 
+        if ((TICK == 285) && (PPUMASK & 0x18))
+            ROM->Scanline();
+
         CYCLE();
     }
+
 
     PRE_SLINE_TILE_FETCH();
 
@@ -280,9 +284,6 @@ void PPU::PRE_RENDER() {
         CYCLE(4);
     //std::cout << "Pre render done\n";
     //auto t2 = std::chrono::high_resolution_clock::now();
-    //std::cout << "Pre-render time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << '\n';
-    if (PPUMASK & 0x18)
-        ROM->Scanline();
 }
 
 
@@ -535,8 +536,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
     }
 
     //Call scanline function, only for MMC3 currently
-   // if ((PPUCTRL & 0x38) == 0x08)
-    //    ROM->Scanline();
+    bool earlySlineClock = ((PPUCTRL & 0x18) == 0x08);
    
     //Cycles 257-320 - Fetch tile data for sprites on next scanline - OAMADDR register determines which is sprite 0
     SPR_ATTRS.clear();
@@ -548,11 +548,9 @@ void PPU::SCANLINE(uint16_t SLINE) {
         if ((OAM_SECONDARY.size() < (i+1)*4) || (foundSprites == 0)) {
             CYCLE(8);
         } else {
-            CYCLE(2);
             SPR_ATTRS.push_back(OAM_SECONDARY[i*4 + 2]);
-            CYCLE();
             SPR_XPOS.push_back(OAM_SECONDARY[i*4 + 3]);
-            CYCLE();
+            CYCLE(4);
 
             //Pattern table data access different for 8*8 vs 8*16 sprites, see PPUCTRL
             //Also vertical flipping must be handled here, 8*16 sprites are flipped completely so last byte of bottom tile is fetched!
@@ -581,9 +579,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
                     P_LOG << "Fetching Sprite at: " <<  std::hex << SPR_PAT_ADDR << " for sline " << int(SLINE) << '\n';
                 }*/
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
-                CYCLE(2);
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
-                CYCLE(2);
+                CYCLE(4);
             }
 
             //Handle horizontal flipping here
@@ -604,13 +601,12 @@ void PPU::SCANLINE(uint16_t SLINE) {
             foundSprites--;
         }
         
+        if ((TICK == 281) && (PPUMASK & 0x18))
+            ROM->Scanline();
     }
 
     //Cycle 321-336
     PRE_SLINE_TILE_FETCH();
-
-    if (PPUMASK & 0x18)
-        ROM->Scanline();
 
     //Cycle 337-340
     CYCLE(4); //Supposed to be nametable fetches identical to fetches at start of next scanline

@@ -51,9 +51,9 @@ int main(int argc, char *argv[]) {
 
     //Start the threads
     CPU_Thread = SDL_CreateThread(CPU_Run, "CPU", &MOS_6502);
-    APU_Thread = SDL_CreateThread(APU_Run, "APU", &RICOH_2A03);
+    //APU_Thread = SDL_CreateThread(APU_Run, "APU", &RICOH_2A03);
     PPU_Thread = SDL_CreateThread(PPU_Run, "PPU", &RICOH_2C02);
-    SDL_DetachThread(APU_Thread);
+    //SDL_DetachThread(APU_Thread);
     SDL_DetachThread(PPU_Thread);
     SDL_DetachThread(CPU_Thread);
 

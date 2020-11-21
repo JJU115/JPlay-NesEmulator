@@ -241,11 +241,11 @@ void CPU::RUN() {
             IRQ_NMI(0xFFFE);
             A->FireIRQ--;
         } else if (IRQPend) {
-           // LOG << "IRQ\n";
+            LOG << "IRQ\n";
             IRQ_NMI(0xFFFE);
             IRQPend = false;
         } else if (*(ROM->FireIrq) && !(STAT & 0x04)) {
-           // LOG << "ROM IRQ\n";
+            LOG << "ROM IRQ\n";
             *(ROM->FireIrq) = false;
             IRQ_NMI(0xFFFE);
         }
@@ -436,7 +436,8 @@ void CPU::RUN() {
         WAIT(cycleCount);
         if (Gamelog) {
             LOG << OPCODES[CODE] << "\t\t" << LOG_STREAM.str() << '\t';
-            LOG << "Counter: " << int(ROM->M->Counter) << " Fire IRQ: " << *(ROM->FireIrq) << '\n';
+            LOG << "Counter: " << int(ROM->M->Counter) << " Fire IRQ: " << *(ROM->FireIrq) << '\t';
+            LOG << "Sline: " << int(P->SLINE_NUM) << " Dot: " << int(P->TICK) << '\n';
         }
     }
 }

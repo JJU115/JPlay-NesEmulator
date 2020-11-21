@@ -24,6 +24,7 @@ void APU::Open_Audio() {
     want.callback = audio_callback;
     SDL_AudioSpec have;
     SDL_OpenAudio(&want, &have);
+    SDL_PauseAudio(0);
 }
 
 
@@ -187,7 +188,7 @@ bool APU::Pulse_Out() {
 //A separate thread for the APU could be eliminated entirely as calling Pulse_out directly from the CPU wait function
 //seems to give better performance
 void APU::Channels_Out() {
-    SDL_PauseAudio(0);
+    //SDL_PauseAudio(0);
     while (true) {
         //Many of the clocking operations actually happen in between APU cycles, i.e. at 3728.5 instead of 3728
         //Setting the frame IRQ also does this once, 

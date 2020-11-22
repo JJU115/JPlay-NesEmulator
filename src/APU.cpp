@@ -318,10 +318,13 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
     switch (reg % 0x4000) {
         case 0:
             Pulse1Control = data;
-            PulseOne.dutyCycle = (data & 0xC0) >> 6;
+            PulseOne.dutyCycle = PULSE_DUTY[(data & 0xC0) >> 6];
             PulseOneEnv.loop = (data & 0x20);
             PulseOneEnv.constVol = (data & 0x10);
             PulseOneEnv.constVolLevel = (data & 0x0F);
+
+            PulseOne.highAmnt = floor(PulseOne.dutyCycle * PulseOne.period);
+            PulseOne.lowAmnt = floor(PulseOne.period - PulseOne.highAmnt);
             break;
         case 1:
             Pulse1Sweep = data;
@@ -333,6 +336,10 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             PulseOne.timer = PulseOneSwp.rawTimer = (Pulse1TimeLow | ((Pulse1TimeHigh & 0x07) << 8));
             PulseOneSwp.truePeriod = PulseOne.timer;
             PulseOneSwp.calculatePeriod();
+
+            PulseOne.period = floor((1.0f / (round(1789773 / (16 * (PulseOne.timer + 1))) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseOne.highAmnt = floor(PulseOne.dutyCycle * PulseOne.period);
+            PulseOne.lowAmnt = floor(PulseOne.period - PulseOne.highAmnt);
             break;
         case 3: //If t<8 then pulse is silenced
             Pulse1TimeHigh = data;
@@ -342,13 +349,20 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             if (PulseOne.enabled)
                 PulseOne.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
             PulseOneEnv.startFlag = true;
+
+            PulseOne.period = floor((1.0f / (round(1789773 / (16 * (PulseOne.timer + 1))) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseOne.highAmnt = floor(PulseOne.dutyCycle * PulseOne.period);
+            PulseOne.lowAmnt = floor(PulseOne.period - PulseOne.highAmnt);
             break;
         case 4:
             Pulse2Control = data;
-            PulseTwo.dutyCycle = (data & 0xC0) >> 6;
+            PulseTwo.dutyCycle = PULSE_DUTY[(data & 0xC0) >> 6];
             PulseTwoEnv.loop = (data & 0x20);
             PulseTwoEnv.constVol = (data & 0x10);
             PulseTwoEnv.constVolLevel = (data & 0x0F);
+
+            PulseTwo.highAmnt = floor(PulseTwo.dutyCycle * PulseTwo.period);
+            PulseTwo.lowAmnt = floor(PulseTwo.period - PulseTwo.highAmnt);
             break;
         case 5:
             Pulse2Sweep = data;
@@ -360,6 +374,10 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             PulseTwo.timer = PulseTwoSwp.rawTimer = (Pulse2TimeLow | ((Pulse2TimeHigh & 0x07) << 8));
             PulseTwoSwp.truePeriod = PulseTwo.timer;
             PulseTwoSwp.calculatePeriod();
+
+            PulseTwo.period = floor((1.0f / (round(1789773 / (16 * (PulseTwo.timer + 1))) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseTwo.highAmnt = floor(PulseTwo.dutyCycle * PulseTwo.period);
+            PulseTwo.lowAmnt = floor(PulseTwo.period - PulseTwo.highAmnt);
             break;
         case 7: //If t<8 then pulse is silenced
             Pulse2TimeHigh = data;
@@ -369,6 +387,10 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             if (PulseTwo.enabled)
                 PulseTwo.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
             PulseTwoEnv.startFlag = true;
+
+            PulseTwo.period = floor((1.0f / (round(1789773 / (16 * (PulseTwo.timer + 1))) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseTwo.highAmnt = floor(PulseTwo.dutyCycle * PulseTwo.period);
+            PulseTwo.lowAmnt = floor(PulseTwo.period - PulseTwo.highAmnt);
             break;
         case 8:
             TriLinearCount = data;

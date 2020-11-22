@@ -17,6 +17,8 @@
 //Global constants: '_' separated capitals
 const int SAMPLE_RATE = 88200; //44100
 
+const std::array<float, 4> PULSE_DUTY = {0.125, 0.25, 0.50, 0.75};
+
 const std::array<uint8_t, 32> LENGTH_TABLE = {10, 254, 20, 2, 40, 4, 80, 6,
                                                 160, 8, 60, 10, 14, 12, 26, 14,
                                                 12, 16, 24, 18, 48, 20, 96, 22,
@@ -80,6 +82,7 @@ struct SweepUnit {
     bool reloadFlag;
     bool channelNum; //true = 1, false = 2
     bool silence;
+    bool change;
 
     //Check muting here, when subtracting does underflow from 0 to ffff happen? If so sweep would mute everytime
     //the negate flag is set and the shift amount is 0
@@ -94,6 +97,7 @@ struct SweepUnit {
             if (!silence && (sweepControl & 0x80) && (rawTimer >> (sweepControl & 0x07))) {
                 truePeriod = targetPeriod;
                 calculatePeriod();
+                change = true;
             }       
             divider = ((sweepControl & 0x70) >> 4);
             reloadFlag = false;  
@@ -103,11 +107,6 @@ struct SweepUnit {
         } else {
             divider--;
         }
-
-        if (!silence && (sweepControl & 0x80) && (rawTimer >> (sweepControl & 0x07))) {
-            truePeriod = targetPeriod;
-            calculatePeriod();
-        }
     }
 }; 
 
@@ -116,17 +115,54 @@ struct Pulse {
     bool enabled;
     uint8_t lengthCount;
     uint16_t timer;
-    uint8_t dutyCycle;
-    uint8_t sequence;
+    float period;
+    float dutyCycle;
+    bool sample;
+    uint16_t sequence;
     Envelope *pulseEnvelope;
     SweepUnit *pulseSweep;
+
+    //Experimental
+    uint16_t highAmnt;
+    uint16_t lowAmnt;
+    bool high;
 
 
     uint8_t getSample(long sampleNum) {
         if (lengthCount == 0 || pulseSweep->silence)
             return 0;
 
-        float freq = round(1789773 / (16 * (pulseSweep->truePeriod + 1))) / 2.0f;
+        if (pulseSweep->change) {
+            period = floor((1.0f / (round(1789773 / (16 * (pulseSweep->truePeriod + 1))) / 2.0f)) * SAMPLE_RATE) * 2;
+            highAmnt = floor(dutyCycle * period);
+            lowAmnt = floor(period - highAmnt);
+            pulseSweep->change = false;
+        }
+
+        
+        if (high) {
+            if (sequence++ >= highAmnt) {
+                sequence = 0;
+                high = false;
+                sample = 0;
+            } else {
+                sample = 1;
+                ++sequence;
+            }
+        } else {
+            if (sequence++ >= lowAmnt) {
+                sequence = 0;
+                high = true;
+                sample = 1;
+            } else {
+                sample = 0;
+                ++sequence;
+            }
+        }
+
+        return pulseEnvelope->getVol() * sample;
+/*
+        float freq = (round(1789773 / (16 * (pulseSweep->truePeriod + 1))) / 2.0f);
         float period = floor((1.0f / freq) * SAMPLE_RATE);
         float alter;
         double sample;
@@ -156,7 +192,7 @@ struct Pulse {
             return 0;
         if (sample >= 1)
             return pulseEnvelope->getVol();
-
+*/
     }
 };
 
@@ -212,13 +248,7 @@ struct Triangle {
         if (!(lengthCount) || !(linearCount) || timer < 2)
             return lastSamp;
         else { 
-            //amplitude 1, no dividing by 2 since the Triangle timer ticks at twice the Pulse timer rate
-            //Formula has been slightly adjusted so that wave oscillates between 0 and 1           
-            //period = round(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE * 2); //# of samples
-            //lastSamp = (2.0 / period * abs((currentSamp++ % (int)period) - period/2.0)); 
-            //return lastSamp;
-            //return (sequencePos < 15) ? (15 - sequencePos) : (sequencePos - 15);
-
+            
             if (--base <= 0) {
                 sequencePos++;
                 sequencePos %= 32;
@@ -228,15 +258,9 @@ struct Triangle {
                     base = floor(period / 32.0f);
             }
            
-            //std::cout << int(sequencePos) << " ";
             currentSamp++;
             
             lastSamp = TRIANGLE_WAVE[sequencePos];
-            /*if (extra >= base) {
-                sequencePos++;
-                sequencePos %= 32;
-                extra = 0;
-            }*/
             return lastSamp;
         }
     }

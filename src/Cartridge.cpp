@@ -41,7 +41,7 @@ void Cartridge::LOAD(char *FILE) {
 
 
     std::cout << "Header read\n";
-    uint8_t MAP_NUM = ((H[6] & 0xF0) >> 4) | (H[7] & 0xF0); //Usage of byte 7 only needed for mapper 66
+    uint8_t MAP_NUM = ((H[6] & 0xF0) >> 4); //| (H[7] & 0xF0); //Usage of byte 7 only needed for mapper 66
 
     //Copy PRG and CHR data to internal vectors
     PRG_ROM.resize(16 * 1024 * H[4]);

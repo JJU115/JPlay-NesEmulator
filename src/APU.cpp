@@ -421,7 +421,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
         case 0x0E:
             NoiseModePeriod = data;
             NoiseChannel.mode = data & 0x80;
-            NoiseChannel.timer = NOISE_PERIOD[data & 0x0F];
+            NoiseChannel.timer = 2*NOISE_PERIOD[data & 0x0F];
             NoiseChannel.reload = NoiseChannel.timer;
             break;
         case 0x0F:

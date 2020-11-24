@@ -278,16 +278,18 @@ struct Noise {
     Envelope *noiseEnvelope;
     double avg;
 
+    uint8_t seq;
+
     void clock() {
         feedBack = (shiftReg & 0x0001) ^ ((mode) ? ((shiftReg & 0x0040) >> 6) : ((shiftReg & 0x0002) >> 1));
         shiftReg = shiftReg >> 1;
         shiftReg &= 0x3FFF;
         shiftReg |= (feedBack << 14);
-        timer = reload;
+        //timer = reload;
     }
 
     double getSample() {
-        avg = 0;
+        /*avg = 0;
         for (int j=0; j<20; j++) {
             if (timer-- == 0) {
                 timer = reload;
@@ -300,7 +302,26 @@ struct Noise {
             return 0;
         else {
             return static_cast<double>(avg);
+        }*/
+        //std::cout << feedBack << '\n';
+        
+        //save current feedback
+        if (!lengthCount)
+            return 0;
+
+        avg = feedBack;
+
+        for (int i=0; i<20; i++) {
+            if (++seq == timer/(mode+1)) {
+                clock();
+                seq = 0;
+            }
         }
+
+        //elapse 20 samples, clocking every (2*period) samples
+
+        //return feedback
+        return avg * noiseEnvelope->getVol();
     }
 };
 
@@ -386,10 +407,10 @@ struct Mixer {
     DMC *dmc;
 
     std::array<double, 31> pulseMixTable;
-    std::array<double, 203> tndTable; //Reduce size of this since noise channel output no longer used to calculate index 
+    std::array<double, 203> tndTable;
     double mixAudio(long sampleNum) {
         double pulseOut = pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)]; 
-        double tndOut = tndTable[3 * tri->getSample() + dmc->output]; //Noise not used right now due to being extremely buggy
+        double tndOut = tndTable[2 * noise->getSample() + 3 * tri->getSample()]; //+ dmc->output]; //Noise not used right now due to being extremely buggy
         return pulseOut + tndOut;// + noise->getSample();
     }
 };

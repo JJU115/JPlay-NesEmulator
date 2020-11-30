@@ -80,13 +80,13 @@ void PPU::WRITE(uint16_t ADDR, uint8_t DATA) {
     //Palette RAM
     if ((ADDR >= 0x3F00) && (ADDR <= 0x3F1F)) {
         if (((ADDR % 4) == 0) && (ADDR < 0x3F10))
-            PALETTES[ADDR & 0xFF] = PALETTES[(ADDR & 0xFF) + 0x10] = DATA;
+            PALETTES[ADDR & 0xFF] = PALETTES[(ADDR & 0xFF) + 0x10] = DATA % 0x40;
         else if ((ADDR % 4) == 0)
-            PALETTES[ADDR & 0xFF] = PALETTES[(ADDR & 0xFF) - 0x10] = DATA;
+            PALETTES[ADDR & 0xFF] = PALETTES[(ADDR & 0xFF) - 0x10] = DATA % 0x40;
         else
-            PALETTES[ADDR & 0xFF] = DATA;
+            PALETTES[ADDR & 0xFF] = DATA % 0x40;
 
-            
+       // std::cout << "Wrote " << int(DATA) << " to " << ADDR << '\n';    
 
     }
 }
@@ -121,7 +121,7 @@ void PPU::CYCLE(uint16_t N) {
         cycleCount++;
         SDL_UnlockMutex(CpuPpuMutex);
 
-        while (cycleCount > 14)
+        while (cycleCount > 14) //Delay triggered by mid-frame changes to vram address
             std::this_thread::yield();
     }
     //Temporary for now to resolve background render timing issues
@@ -327,8 +327,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
     //Cycle 0 is idle
     CYCLE();
     
-    if (targ)
-        P_LOG << SLINE << ":  \n";
+
+    //P_LOG << SLINE << ":  \n";
     //Cycles 1-256: Fetch tile data starting at tile 3 of current scanline (first two fetched from previous scanline)
     //Remember the vram address updates
     while (TICK < 257) {
@@ -356,7 +356,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
             case 2:
                 //Fetch nametable byte
                 NTABLE_BYTE = FETCH(0x2000 | (VRAM_ADDR & 0x0FFF)); //Change based on base nametable select of ppuctrl register?
-                //if (targ)
+               // if ((SLINE_NUM > 143) && (SLINE_NUM < 152))
                 //    P_LOG << "NTable byte: " << std::hex << int(NTABLE_BYTE) << '\n';
                 break;
             case 4:

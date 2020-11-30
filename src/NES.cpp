@@ -15,7 +15,7 @@ SDL_mutex* CpuPpuMutex;
 
 int CPU_Run(void* data);
 int PPU_Run(void* data);
-int APU_Run(void* data);
+
  
 int main(int argc, char *argv[]) {
     Cartridge C;
@@ -32,7 +32,6 @@ int main(int argc, char *argv[]) {
 
     SDL_Thread* PPU_Thread;
     SDL_Thread* CPU_Thread;
-    SDL_Thread* APU_Thread;
     mainThreadMutex = SDL_CreateMutex();
     mainPPUCond = SDL_CreateCond();
     CpuPpuMutex = SDL_CreateMutex();
@@ -51,9 +50,8 @@ int main(int argc, char *argv[]) {
 
     //Start the threads
     CPU_Thread = SDL_CreateThread(CPU_Run, "CPU", &MOS_6502);
-    //APU_Thread = SDL_CreateThread(APU_Run, "APU", &RICOH_2A03);
     PPU_Thread = SDL_CreateThread(PPU_Run, "PPU", &RICOH_2C02);
-    //SDL_DetachThread(APU_Thread);
+    
     SDL_DetachThread(PPU_Thread);
     SDL_DetachThread(CPU_Thread);
 
@@ -98,7 +96,7 @@ int main(int argc, char *argv[]) {
         //Wait if needed
         frameEnd = std::chrono::high_resolution_clock::now();
         elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
-        //std::cout << "FPS: " << (1000/elapsedTime) << '\n';
+        std::cout << "FPS: " << (1000/elapsedTime) << '\n';
         if (elapsedTime < 16)
             std::this_thread::sleep_for(std::chrono::milliseconds(16 - elapsedTime));
          
@@ -120,14 +118,6 @@ int CPU_Run(void* data) {
 int PPU_Run(void* data) {
     
     ((PPU* )data)->GENERATE_SIGNAL();
-
-    return 0;
-}
-
-
-int APU_Run(void* data) {
-    
-    ((APU* )data)->Channels_Out();
 
     return 0;
 }

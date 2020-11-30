@@ -152,6 +152,8 @@ void CPU::WAIT(uint8_t N) {
     
         CPUCycleCount++;
         intCnt++;
+
+        //Need a different way to stall, this elapses cycles
         if (A->Pulse_Out()) {
             //DMC is reading memory, stall CPU for up to 4 cycles
             //Specific number dependent on CPU operation currently in progress, just use 4 for now
@@ -435,9 +437,7 @@ void CPU::RUN() {
         //LOG << P->SLINE_NUM << "  " << P->TICK << " " << CPUCycleCount << '\n';
         WAIT(cycleCount);
         if (Gamelog) {
-            LOG << OPCODES[CODE] << "\t\t" << LOG_STREAM.str() << '\t';
-            LOG << "Counter: " << int(ROM->M->Counter) << " Fire IRQ: " << *(ROM->FireIrq) << '\t';
-            LOG << "Sline: " << int(P->SLINE_NUM) << " Dot: " << int(P->TICK) << '\n';
+            LOG << OPCODES[CODE] << "\t\t" << LOG_STREAM.str() << '\n';
         }
     }
 }

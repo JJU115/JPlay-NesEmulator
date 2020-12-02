@@ -2,13 +2,9 @@
 #define APU_H
 
 #include "Cartridge.hpp"
-#include <thread>
-#include <chrono>
 #include <cmath>
 #include <array>
 #include <SDL.h>
-#include <SDL_keyboard.h>
-#include <sstream>
 
 //Class data members: Upper camel case
 //Class functions: Uppercase underscore separated

@@ -18,27 +18,6 @@
 #include <condition_variable>
 
 
-struct Sprite {
-    uint8_t Y_POS;
-    uint8_t IND;
-    uint8_t ATTR;
-    uint8_t X_POS;
-};
-
-auto SPR_SELECT = [](uint8_t m, Sprite S) {
-    switch (m) {
-        case 0:
-            return S.Y_POS;
-        case 1:
-            return S.IND;
-        case 2:
-            return S.ATTR;
-        case 3:
-            return S.X_POS;
-        }
-};
-
-
 class PPU {
     friend class CPU; //Should try and get rid of this
     public:

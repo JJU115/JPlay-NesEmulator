@@ -27,7 +27,7 @@ class CPU {
         unsigned char STACK_POP();
         void RESET();
         void IRQ_NMI(uint16_t V);
-        void WAIT(uint8_t N=1);
+        void WAIT(uint16_t N=1);
 
         Cartridge *ROM;
         PPU *P;

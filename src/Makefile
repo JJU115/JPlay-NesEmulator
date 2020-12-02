@@ -1,10 +1,10 @@
 CXX = g++
-DBG = -g
+DBG = -g -O3
 # Update these paths as necessary to match your installation
 SDL_LIB = -LC:/SDL/i686-w64-mingw32/lib -lSDL2main -lSDL2
 SDL_INCLUDE = -IC:/SDL/i686-w64-mingw32/include/SDL2
 # If your compiler is a bit older you may need to change -std=c++11 to -std=c++0x
-CXXFLAGS = -g -c -std=c++11 $(SDL_INCLUDE)
+CXXFLAGS = -O3 -g -c -std=c++11 $(SDL_INCLUDE)
 LDFLAGS = -lmingw32 -mwindows -mconsole $(SDL_LIB)
 FILES = APU.o Display.o CPU.o PPU.o NES.o Cartridge.o NROM.o MMC1.o UxROM.o CxROM.o MMC3.o AxROM.o MMC2.o GxROM.o
 EXE = NES.exe

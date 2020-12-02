@@ -1,4 +1,3 @@
-#include <iostream>
 #include "APU.hpp"
 
 
@@ -180,7 +179,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             PulseOneSwp.truePeriod = PulseOne.timer;
             PulseOneSwp.calculatePeriod();
 
-            PulseOne.period = floor((1.0f / (round(1789773 / (16 * (PulseOne.timer + 1))) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseOne.period = floor((1.0f / (round(1789773 / ((PulseOne.timer + 1) << 4)) / 2.0f) ) * SAMPLE_RATE) * 2;
             PulseOne.highAmnt = floor(PulseOne.dutyCycle * PulseOne.period);
             PulseOne.lowAmnt = floor(PulseOne.period - PulseOne.highAmnt);
             break;
@@ -193,7 +192,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
                 PulseOne.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
             PulseOneEnv.startFlag = true;
 
-            PulseOne.period = floor((1.0f / (round(1789773 / (16 * (PulseOne.timer + 1))) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseOne.period = floor((1.0f / (round(1789773 / ((PulseOne.timer + 1) << 4)) / 2.0f)) * SAMPLE_RATE) * 2;
             PulseOne.highAmnt = floor(PulseOne.dutyCycle * PulseOne.period);
             PulseOne.lowAmnt = floor(PulseOne.period - PulseOne.highAmnt);
             break;
@@ -217,7 +216,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             PulseTwoSwp.truePeriod = PulseTwo.timer;
             PulseTwoSwp.calculatePeriod();
 
-            PulseTwo.period = floor((1.0f / (round(1789773 / (16 * (PulseTwo.timer + 1))) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseTwo.period = floor((1.0f / (round(1789773 / ((PulseTwo.timer + 1) << 4)) / 2.0f)) * SAMPLE_RATE) * 2;
             PulseTwo.highAmnt = floor(PulseTwo.dutyCycle * PulseTwo.period);
             PulseTwo.lowAmnt = floor(PulseTwo.period - PulseTwo.highAmnt);
             break;
@@ -230,7 +229,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
                 PulseTwo.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
             PulseTwoEnv.startFlag = true;
 
-            PulseTwo.period = floor((1.0f / (round(1789773 / (16 * (PulseTwo.timer + 1))) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseTwo.period = floor((1.0f / (round(1789773 / ((PulseTwo.timer + 1) << 4)) / 2.0f)) * SAMPLE_RATE) * 2;
             PulseTwo.highAmnt = floor(PulseTwo.dutyCycle * PulseTwo.period);
             PulseTwo.lowAmnt = floor(PulseTwo.period - PulseTwo.highAmnt);
             break;
@@ -262,7 +261,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             break;
         case 0x0E:
             NoiseChannel.mode = data & 0x80;
-            NoiseChannel.timer = 2*NOISE_PERIOD[data & 0x0F];
+            NoiseChannel.timer = NOISE_PERIOD[data & 0x0F];
             NoiseChannel.reload = NoiseChannel.timer;
             break;
         case 0x0F:
@@ -372,8 +371,8 @@ uint8_t APU::Reg_Read() {
     uint8_t status = FrameInterrupt << 6;
     FrameInterrupt = false;
 
-    status |= (PulseOne.lengthCount > 0) | ((PulseTwo.lengthCount > 0) * 2) | ((TriChannel.lengthCount > 0) * 4) | 
-    ((NoiseChannel.lengthCount > 0) * 8) | ((DMCChannel.bytesRemain > 0) * 16);
+    status |= (PulseOne.lengthCount > 0) | ((PulseTwo.lengthCount > 0) << 1) | ((TriChannel.lengthCount > 0) << 2) | 
+    ((NoiseChannel.lengthCount > 0) << 3) | ((DMCChannel.bytesRemain > 0) << 4);
     
     return (status | (DMCChannel.interrupt << 7));
 }

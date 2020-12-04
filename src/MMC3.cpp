@@ -1,5 +1,5 @@
 #include "MMC3.hpp"
-#include <iostream> 
+
 
 
 uint32_t MMC3::CPU_READ(uint16_t ADDR) {
@@ -55,14 +55,8 @@ void MMC3::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
 
                 }
                 
-                /*std::cout << "Wrote " << int(VAL) << " to bankData\n";
-                std::cout << "PRG banks: ";
-                for (int j=0; j<4; j++)
-                    std::cout << int(PrgBanks[j]) << " ";
-                std::cout << '\n';*/
             } else {
                 //Even
-                //BankSelect = VAL;
                 TargetBank = VAL & 0x07;
                 if (PrgMode ^ bool(VAL & 0x40)) {
                     PrgBanks[0] ^= PrgBanks[2];
@@ -80,15 +74,6 @@ void MMC3::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
 
                 ChrMode = VAL & 0x80;
                 PrgMode = VAL & 0x40;
-                /*std::cout << "Wrote " << int(VAL) << " to bankselect\n";
-                std::cout << "CHR banks: ";
-                for (int j=0; j<8; j++)
-                    std::cout << int(ChrBanks[j]) << " ";
-                std::cout << '\n';
-                std::cout << "PRG banks: ";
-                for (int j=0; j<4; j++)
-                    std::cout << int(PrgBanks[j]) << " ";
-                std::cout << '\n';*/
             }
             break;
         case 0xA000:

@@ -1,5 +1,4 @@
 #include "AxROM.hpp"
-#include <iostream>
 
 
 inline uint32_t AxROM::CPU_READ(uint16_t ADDR) {

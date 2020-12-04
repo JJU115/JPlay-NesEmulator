@@ -1,5 +1,4 @@
 #include "MMC2.hpp"
-#include <iostream>
 
 
 uint32_t MMC2::CPU_READ(uint16_t ADDR) {
@@ -66,7 +65,6 @@ void MMC2::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
             Mirroring = (VAL & 0x01) ? Horizontal : Vertical;
             break;
     }
-    //std::cout << "Wrote " << int(VAL) << " to " << ADDR << '\n';
 }
 
 

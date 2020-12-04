@@ -1,5 +1,4 @@
 #include "CxROM.hpp"
-#include <iostream>
 
 
 inline uint32_t CxROM::CPU_READ(uint16_t ADDR) {

@@ -49,7 +49,6 @@ class MMC3 : public Mapper {
         bool IrqReload;
         bool IrqEnable;
         bool Set;
-        //uint8_t Counter;
 
         std::array<uint8_t, 8 * 1024> PRG_RAM; 
 

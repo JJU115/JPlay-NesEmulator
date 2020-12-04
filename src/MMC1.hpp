@@ -1,7 +1,7 @@
 #ifndef MMC1_H
 #define MMC1_H
 
-//iNES mapper #001 - Still unclear on register state at power-up/reset 
+//iNES mapper #001 
 
 #include "Mapper.hpp"
 #include <array>

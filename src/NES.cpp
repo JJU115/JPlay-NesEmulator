@@ -28,19 +28,20 @@ int main(int argc, char *argv[]) {
     pause = false;
     Gamelog = false;
 
-    CPUCycleCount = 0; //Declared in PPU.hpp, included into CPU.hpp, then included in here!
+    CPUCycleCount = 0;
 
     SDL_Thread* PPU_Thread;
     SDL_Thread* CPU_Thread;
     mainThreadMutex = SDL_CreateMutex();
     mainPPUCond = SDL_CreateCond();
     CpuPpuMutex = SDL_CreateMutex();
-    
-    if (argc > 1)
-        std::cout << argv[1] << std::endl;
 
-    if (argc > 1)
-        C.LOAD(argv[1]);
+    if (argc > 1) {
+        if(!C.LOAD(argv[1])) {
+            std::cout << "Error: Bad nes file or unrecognized mapper. Supported mappers: 0,1,2,3,4,7,9,66";
+            return -1;
+        }
+    }
 
     SDL_LockMutex(mainThreadMutex);
 
@@ -63,7 +64,7 @@ int main(int argc, char *argv[]) {
             std::cout << "Error: " << SDL_GetError();
         
         //Draw frame
-        Screen.RENDER_FRAME(RICOH_2C02.framePixels);
+        Screen.Render_Frame(RICOH_2C02.framePixels);
     
         //Check for events
         if(SDL_PollEvent(&evt)) {

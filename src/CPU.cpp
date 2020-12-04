@@ -16,11 +16,10 @@ extern SDL_mutex* CpuPpuMutex;
 uint8_t VAL, TEMP, LOW, HIGH, POINT;
 uint16_t WBACK_ADDR;
 std::ofstream LOG;
-char *B;
 std::string LOG_LINE;
 std::stringstream LOG_STREAM;
 
-short CTRL_IGNORE;
+
 
 inline void CPU::STACK_PUSH(uint8_t BYTE) {
     RAM[0x0100 + STCK_PNT--] = BYTE;   
@@ -118,9 +117,9 @@ void CPU::WAIT(uint16_t N) {
 
         SDL_LockMutex(CpuPpuMutex); //Locking helps prevent data races involving cycleCount which could lead to inaccurate timing
         P->cycleCount -= 3;         //between CPU and PPU, BUT... Locking involves heavy performance cost, especially when called this
-        SDL_UnlockMutex(CpuPpuMutex);//often. Will have to consider other synchronization schemes particularly atomic operations
+        SDL_UnlockMutex(CpuPpuMutex);//often.
     
-        CPUCycleCount++;
+        ++CPUCycleCount;
 
         if (A->Pulse_Out()) {
             //DMC is reading memory, stall CPU for up to 4 cycles
@@ -130,8 +129,6 @@ void CPU::WAIT(uint16_t N) {
 
     }
 
-    if (CTRL_IGNORE < 30000)
-        CTRL_IGNORE++;
 }
 
 
@@ -142,7 +139,6 @@ void CPU::RESET() {
     STAT &= 0xEF;
     PROG_CNT = ((FETCH(0xFFFD) << 8) | FETCH(0xFFFC));
     STAT |= 0x04;
-    CTRL_IGNORE = 0;
     A->FrameCount = 0;
     
     WAIT(7); 
@@ -163,10 +159,9 @@ void CPU::IRQ_NMI(uint16_t V) {
     WAIT(7);
 }
 
-//Concerns regearding interrupts, specifically when and where to set interrupt bools, need to look into it more
+
 void CPU::RUN() {
     RAM.fill(0); //Clear RAM
-    CTRL_IGNORE = 0;
     bool unofficial = false;
     uint8_t cycleCount;
     const uint8_t *keyboard = SDL_GetKeyboardState(NULL);
@@ -174,7 +169,6 @@ void CPU::RUN() {
     //Enable logging
     LOG.open("CPU_LOG.txt", std::ios::trunc | std::ios::out);
     
-
     //Reset bool
     bool R = true;
 
@@ -452,7 +446,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             break;
     }
 
-
+    
     switch (OP) {
         //ADC
         case 0x61:
@@ -830,7 +824,7 @@ uint8_t CPU::EXEC(uint8_t OP, char ADDR_TYPE) {
             REG_P = &ACC;
             break;       
     }
-
+   
     //Examine and change status flags if needed
     if (REG_P) {
         STAT = (*REG_P == 0) ?  (STAT | 0x02) : (STAT & 0xFD);

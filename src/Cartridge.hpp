@@ -8,9 +8,8 @@
 
 
 class Cartridge {
-    friend class CPU;
     public:
-        void LOAD(char *FILE);
+        bool LOAD(char *FILE);
         uint8_t CPU_ACCESS(uint16_t ADDR, uint8_t VAL=0, bool R=true);
         uint16_t PPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R, bool NT_M=false);
         void Scanline();

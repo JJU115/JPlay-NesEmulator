@@ -6,11 +6,7 @@
 #include <array>
 #include <SDL.h>
 
-//Class data members: Upper camel case
-//Class functions: Uppercase underscore separated
-//Local vars: lower camel case
-//Global vars: 'g_' preceded lower camel case
-//Global constants: '_' separated capitals
+
 const int SAMPLE_RATE = 88200; //44100
 
 const std::array<float, 4> PULSE_DUTY = {0.125, 0.25, 0.50, 0.75};
@@ -442,6 +438,7 @@ class APU {
 
         DMC DMCChannel;
 
+        //Don't need a data member for every single APU register so some omitted here
         //Pulse 1 channel registers
         uint8_t Pulse1Control; //$4000
         uint8_t Pulse1TimeLow; //$4002

@@ -5,12 +5,12 @@ class Display {
     public:
         Display();
         ~Display();
-        void RENDER_FRAME(uint32_t* nextFrame);
+        void Render_Frame(uint32_t* nextFrame);
     private:
-        SDL_Window* nesWindow;
-        SDL_Renderer* nesRenderer;
-        SDL_Texture* nesTexture;
-        uint32_t* framePixels;
-        void* frame;
-        int pitch;
+        SDL_Window* NesWindow;
+        SDL_Renderer* NesRenderer;
+        SDL_Texture* NesTexture;
+        uint32_t* FramePixels;
+        void* Frame;
+        int Pitch;
 };

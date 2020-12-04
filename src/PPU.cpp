@@ -99,6 +99,7 @@ void PPU::CYCLE(uint16_t N) {
 
         while (cycleCount > 14)
             std::this_thread::yield();
+
     }
 }
 
@@ -361,10 +362,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
         else
             COL = FETCH(BGPIXEL);
 
-
-        //Three sequential accesses to system palette at the same index is inefficient, should modify so a single access to palette gives full color
-        //framePixels[(SLINE * 256) + TICK - 1] = ((SYSTEM_PAL[COL].R << 24) | (SYSTEM_PAL[COL].G << 16) | (SYSTEM_PAL[COL].B << 8) | 0xFF);
         framePixels[(SLINE * 256) + TICK - 1] = SYSTEM_PAL[COL];
+
         //Shift registers once
         //Pattern table data for one tile are stored in the lower 8 bytes of the two shift registers
         //Low entry in BGSHIFT_ONE, high entry in BGSHIFT_TWO
@@ -375,6 +374,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
         ATTRSHIFT_TWO <<= 1;
         ATTRSHIFT_ONE |= (ATTR_NEXT & 0x01);
         ATTRSHIFT_TWO |= ((ATTR_NEXT & 0x02) >> 1);
+
 
         //Sprite eval - happens if either background or sprite rendering is enabled
          if (TICK >= 65 && ((PPUMASK & 0x10) || (PPUMASK & 0x08))) {
@@ -445,7 +445,6 @@ void PPU::SCANLINE(uint16_t SLINE) {
         } else {
             SPR_ATTRS.push_back(OAM_SECONDARY[(i << 2) + 2]);
             SPR_XPOS.push_back(OAM_SECONDARY[(i << 2) + 3]);
-            CYCLE(4);
 
             //Pattern table data access different for 8*8 vs 8*16 sprites, see PPUCTRL
             //Also vertical flipping must be handled here, 8*16 sprites are flipped completely so last byte of bottom tile is fetched!
@@ -455,9 +454,7 @@ void PPU::SCANLINE(uint16_t SLINE) {
                 SPR_PAT_ADDR += (SPR_ATTRS.back() & 0x80) ? (7 - (SLINE - OAM_SECONDARY[i << 2])) : (SLINE - OAM_SECONDARY[i << 2]); 
                 
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
-                CYCLE(2);
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
-                CYCLE(2);
             } else { //8*16 sprites
                 SPR_PAT_ADDR = (((OAM_SECONDARY[(i << 2) + 1] & 0x01) << 12) | (((OAM_SECONDARY[(i << 2) + 1] & 0xFE)) << 4));
 
@@ -471,8 +468,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
-                CYCLE(4);
             }
+            CYCLE(8);
 
             //Handle horizontal flipping here
             if (SPR_ATTRS.back() & 0x40) {
@@ -593,6 +590,8 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
             NMI_OUT = (DATA & 0x80);
             VRAM_TEMP &= 0xF3FF;
             VRAM_TEMP |= (((DATA & 0x03) << 10)); 
+            if (Gamelog)
+                P_LOG << "Wrote " << int(DATA) << " to control at sline: " << SLINE_NUM << "\n";
             break;
         case 1: //Possible mid-frame state change
             PPUMASK = DATA;

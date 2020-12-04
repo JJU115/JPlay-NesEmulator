@@ -11,15 +11,16 @@
 #include <iostream>
 
 
-//For now, only iNES format will be supported, NES 2.0 will come later after initial dev wraps
+//For now, only iNES format will be supported
 
-void Cartridge::LOAD(char *FILE) {
+bool Cartridge::LOAD(char *FILE) {
     //Error handle if needed
     CPU_LINE1.open(FILE, std::ios::in | std::ios::binary);
-    //PPU_LINE1.open(FILE, std::ios::in | std::ios::binary);
 
     if (CPU_LINE1.is_open())
         std::cout << "ROM loaded\n";
+    else
+        return false; 
 
     char *H = new char[16];
     C_BUF = new char[1];
@@ -27,21 +28,20 @@ void Cartridge::LOAD(char *FILE) {
     
     if ((H[0] == 'N') && (H[1] == 'E') && (H[2] == 'S') && (H[3] == 0x1A))
         std::cout << "NES file loaded\n";
+    else
+        return false;
 
     if ((H[6] & 0x04) != 0) { //Trainer present
         CPU_STARTPOS = 544;
         PPU_STARTPOS = 544 + (H[4] * 16384);
         CPU_LINE1.seekg(528);
-        //PPU_LINE1.seekg(PPU_STARTPOS);
     } else {
         CPU_STARTPOS = 16;
         PPU_STARTPOS = 16 + (H[4] * 16384);
-        //PPU_LINE1.seekg(PPU_STARTPOS);
     }
 
 
-    std::cout << "Header read\n";
-    uint8_t MAP_NUM = ((H[6] & 0xF0) >> 4); //| (H[7] & 0xF0); //Usage of byte 7 only needed for mapper 66
+    uint8_t MAP_NUM = ((H[6] & 0xF0) >> 4 | (H[7] & 0xF0)); //Usage of byte 7 only needed for mapper 66
 
     //Copy PRG and CHR data to internal vectors
     PRG_ROM.resize(16 * 1024 * H[4]);
@@ -64,28 +64,42 @@ void Cartridge::LOAD(char *FILE) {
     }
     
     //Load the mapper
-    //Need some sort of dictionary to store (mapper#, mapper class) pairs, for now just if statements
-    if (MAP_NUM == 0) 
-        M = new NROM(H[4], H[5], (H[6] & 0x01)); //0 = horizontal mirror, 1 = vertical mirror
-    else if (MAP_NUM == 1)
-        M = new MMC1(H[4], H[5]);
-    else if (MAP_NUM == 2)
-        M = new UxROM(H[4], H[6] & 0x01);
-    else if (MAP_NUM == 3)
-        M = new CxROM(H[4], H[5], H[6] & 0x01);
-    else if (MAP_NUM == 4)
-        M = new MMC3(H[4], H[5]);
-    else if (MAP_NUM == 7)
-        M = new AxROM(H[4], H[5]);
-    else if (MAP_NUM == 9)
-        M = new MMC2(H[4], H[5]);
-    else if (MAP_NUM == 66)
-        M = new GxROM(H[4], H[5], (H[6] & 0x01));
+    switch (MAP_NUM) {
+        case 0:
+            M = new NROM(H[4], H[5], (H[6] & 1));
+            break;
+        case 1:
+            M = new MMC1(H[4], H[5]);
+            break;
+        case 2:
+            M = new UxROM(H[4], (H[6] & 1));
+            break;
+        case 3:
+            M = new CxROM(H[4], H[5], (H[6] & 1));
+            break;
+        case 4:
+            M = new MMC3(H[4], H[5]);
+            break;
+        case 7:
+            M = new AxROM(H[4], H[5]);
+            break;
+        case 9:
+            M = new MMC2(H[4], H[5]);
+            break;
+        case 66:
+            M = new GxROM(H[4], H[5], (H[6] & 1));
+            break;
+        default:
+            CPU_LINE1.close();
+            delete DATA_BUF;
+            return false;
+    }
 
 
     CPU_LINE1.close();
     FireIrq = &(M->Irq);
     delete DATA_BUF;
+    return true;
 }
 
 
@@ -98,12 +112,11 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
         uint32_t a = M->CPU_READ(ADDR);
         if (a >= PRG_ROM.size())
             std::cout << "PRG OB Read " << ADDR << " --- " << M->CPU_READ(ADDR) << '\n';
-        
-        //std::cout << "PRG Read: " << ADDR << '\n'
+
         return PRG_ROM[a];
         
     } else {
-        M->CPU_WRITE(ADDR, VAL); //possible cases here differ by mapper, this will have to change when implementing more of them 
+        M->CPU_WRITE(ADDR, VAL);
         return 0;
     }
 }

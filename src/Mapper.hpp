@@ -30,16 +30,35 @@ class Mapper {
 
             switch (M) {
                 case Vertical:
-                    return (ADDR > 0x27FF) ? (ADDR & 0x27FF) : (ADDR & 0x1FFF);
+                    return (ADDR > 0x27FF) ? (ADDR % 0x2800) : (ADDR % 0x2000);
                     break;
                 case Horizontal:
-                    return ADDR & 0x03FF + ((ADDR > 0x27FF) * 0x0400);
+                    if ((ADDR > 0x23FF && ADDR < 0x2800) || (ADDR > 0x27FF && ADDR < 0x2C00))
+                        return (ADDR - 0x0400) % 0x2000;
+                    else if (ADDR > 0x2BFF)
+                        return (ADDR - 0x0800) % 0x2000;
+                    else
+                        return (ADDR % 0x2000);
                     break;
                 case SingleLower:
-                    return ADDR & 0x03FF;
+                    if (ADDR > 0x2BFF)
+                        return ((ADDR - 0x0C00) % 0x2000);
+                    else if (ADDR > 0x27FF)
+                        return ((ADDR - 0x0800) % 0x2000);
+                    else if (ADDR > 0x23FF)
+                        return ((ADDR - 0x0400) % 0x2000);
+                    else
+                        return (ADDR % 0x2000);
                     break;
                 case SingleUpper:
-                    return (ADDR & 0x03FF) + 0x0400;
+                    if (ADDR < 0x2400)
+                        return ((ADDR + 0x0400) % 0x2000);
+                    else if (ADDR > 0x27FF && ADDR < 0x2C00)
+                        return ((ADDR - 0x0400) % 0x2000);
+                    else if (ADDR > 0x2BFF)
+                        return ((ADDR - 0x0800) % 0x2000);
+                    else
+                        return (ADDR % 0x2000);
                     break;
             }
 

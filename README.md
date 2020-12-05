@@ -31,7 +31,7 @@ This amounts to ~1412 different games.
 If you only want to run the program then all you need is the NES.exe file and your .nes file.<br>
 ```
 //The file needs to be a single argument so wrap it in double quotes if is has spaces
-$ NES <.nes file>`
+$ NES <.nes file>
 ```
 
 You can compile it yourself with the makefile and mingw32-make on Windows:<br>

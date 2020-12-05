@@ -26,12 +26,15 @@ Aside from that JPlay implements and can play games using the following iNES map
 
 This amounts to ~1412 different games.
 
+## Dependencies
+JPlay makes use of and requires SDL2.0 to run 
+
 
 ## Usage
 If you only want to run the program then all you need is the NES.exe file and your .nes file.<br>
 ```
-//The file needs to be a single argument so wrap it in double quotes if is has spaces
+//The file needs to be a single argument so wrap it in double quotes if it has spaces
 $ NES <.nes file>
 ```
 
-You can compile it yourself with the makefile and mingw32-make on Windows:<br>
+You can compile it yourself with the makefile and mingw32-make on Windows.

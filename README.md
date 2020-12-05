@@ -38,3 +38,18 @@ $ NES <.nes file>
 ```
 
 You can compile it yourself with the makefile and mingw32-make on Windows.
+
+
+## Controller Mapping
+Controller input is currently mapped to the following keybindings:
+
+Button | Key
+------ | ---
+A | A
+B | S
+Up | Up Arrow
+Left | Left Arrow
+Right | Right Arrow
+Down | Down Arrow
+Select | Right Shift
+Start | Enter

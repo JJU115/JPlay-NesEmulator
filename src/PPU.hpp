@@ -44,6 +44,10 @@ class PPU {
         uint8_t FETCH(uint16_t ADDR);
         void WRITE(uint16_t ADDR, uint8_t DATA);
         void nametable(std::array<uint8_t, 2048> N);
+
+        uint8_t NMI_OCC;
+        uint8_t NMI_OUT;
+        uint8_t GEN_NMI;
         Cartridge *ROM;
 
         uint8_t PPUCTRL;
@@ -56,10 +60,6 @@ class PPU {
         uint8_t PPUDATA;
         uint8_t OAMDMA;
 
-        uint8_t NMI_OCC;
-        uint8_t NMI_OUT;
-        uint8_t GEN_NMI;
-
         std::array<uint8_t, 2048> VRAM; //May need less based on cartridge configuration
         std::vector<uint8_t> OAM_PRIMARY;
         std::vector<uint8_t> OAM_SECONDARY;
@@ -70,7 +70,6 @@ class PPU {
         uint16_t VRAM_ADDR;
         uint16_t VRAM_TEMP;
         uint8_t Fine_x;
-        bool WRITE_TOGGLE;
 
         uint16_t BGSHIFT_ONE, BGSHIFT_TWO;
         uint8_t ATTRSHIFT_ONE, ATTRSHIFT_TWO, ATTR_NEXT;
@@ -80,6 +79,8 @@ class PPU {
         std::vector<uint8_t> SPR_XPOS;
 
         bool ODD_FRAME;
+        bool WRITE_TOGGLE;
+
         bool SuppressNmi;
         bool NmiDelay;
         bool spriteZeroRendered;

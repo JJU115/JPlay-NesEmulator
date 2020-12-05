@@ -112,7 +112,6 @@ void PPU::GENERATE_SIGNAL() {
     VRAM.fill(0);
     SLINE_NUM = 0;
     P_LOG.open("PPU_LOG.txt", std::ios::trunc | std::ios::out);
-    int ext = 0;
     
     while (true) {
         //These two calls ensure the main thread is waiting on its condition variable before the PPU goes any further
@@ -170,7 +169,6 @@ void PPU::GENERATE_SIGNAL() {
 void PPU::PRE_RENDER() {
     //auto t1 = std::chrono::high_resolution_clock::now();
     TICK = 0;
-    uint8_t NTABLE_BYTE;
 
     CYCLE();
     PPUSTATUS &= 0x1F;  //Signal end of Vblank and clear sprite overflow
@@ -230,7 +228,6 @@ void PPU::SCANLINE(uint16_t SLINE) {
     bool spriteZeroRenderedNext = false;
     bool spriteZeroHit = false; //true if zero hit has occurred
     bool spriteZeroLoaded = false;
-    bool targ = false;
     bool spriteHasPriority = false;
 
     bool hideLeftBg = !(PPUMASK & 0x02);
@@ -543,6 +540,7 @@ void PPU::PRE_SLINE_TILE_FETCH() {
     ATTR_NEXT = FETCH(0x23C0 | (VRAM_ADDR & 0x0C00) | ((VRAM_ADDR >> 4) & 0x38) | ((VRAM_ADDR >> 2) & 0x07));
     if (((VRAM_ADDR & 0x03E0) >> 5) & 0x02) 
         ATTR_NEXT >>= 4;
+        
 	if ((VRAM_ADDR & 0x001F) & 0x02) 
         ATTR_NEXT >>= 2;
 	

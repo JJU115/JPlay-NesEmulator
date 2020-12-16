@@ -8,12 +8,13 @@ An emulator of the Nintendo Entertainment System for Windows written in C++ as a
 
 
 ## Current State
-The system is working and can play most games without trouble. The only outstanding issues are:
+The system is working and can play most games without trouble. Games which use special
+visual effects or mid frame state changes (i.e split the screen) may appear a little wonky.
+In terms of faithfulness to original hardware the APU deviates the most, as such the audio
+isn't perfect but any problems are likely to be barely noticeable.
 
-  * The DMC channel of the APU isn't functional
-  * Games that perform mid frame state changes (i.e split the the screen) may appear a little wonky
-
-Aside from that JPlay implements and can play games using the following iNES mappers:
+  
+JPlay implements and can play games using the following iNES mappers:
 
   * (0) NROM
   * (1) MMC1
@@ -24,7 +25,9 @@ Aside from that JPlay implements and can play games using the following iNES map
   * (9) MMC2
   * (66) GxROM
 
-This amounts to ~1412 different games.
+This amounts to ~1412 different games. Note that ROM dumps with bad iNES headers will likely crash the program.
+Of the first 16 bytes only the first 6 are used, GxROM mapped games will use the top 4 bits of byte 7, the remaining
+unused bytes should be 0.
 
 ## Dependencies
 JPlay makes use of and requires SDL2.0 to run 

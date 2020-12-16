@@ -53,3 +53,7 @@ Right | Right Arrow
 Down | Down Arrow
 Select | Right Shift
 Start | Enter
+Reset | R
+
+Press 'l' to enable/disable basic CPU logging. Disabled by default.
+

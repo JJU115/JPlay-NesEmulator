@@ -1,6 +1,6 @@
 #include "APU.hpp"
 
-
+extern bool quit;
 long g_sampleNum;
 
 void audio_callback(void *user_data, uint8_t *raw_buffer, int bytes) {
@@ -8,7 +8,8 @@ void audio_callback(void *user_data, uint8_t *raw_buffer, int bytes) {
     Mixer *output = (Mixer *)user_data;
     
     for(int i = 0; i < bytes/4; i++, g_sampleNum++)
-        buffer[i] = output->mixAudio(g_sampleNum);    
+        buffer[i] = output->mixAudio(g_sampleNum);
+      
 }
 
 
@@ -16,8 +17,9 @@ void APU::Open_Audio() {
     g_sampleNum = 0;
     want.callback = audio_callback;
     SDL_AudioSpec have;
-    SDL_OpenAudio(&want, &have);
-    SDL_PauseAudio(0);
+    //SDL_OpenAudio(&want, &have);
+    dev = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
+    SDL_PauseAudioDevice(dev, 0);
 }
 
 
@@ -134,11 +136,24 @@ bool APU::Pulse_Out() {
     }
     CpuCycles %= (FrameCount & 0x80) ? 37282 : 29833;
 
-    if (--DMCChannel.rate == 0) {
-        DMCChannel.rate = DMCChannel.reload;
-        if (DMCChannel.enabled)
-            DMCChannel.clock();
+    if (NoiseChannel.timer-- == 0) {
+        NoiseChannel.timer = NoiseChannel.reload;
+        NoiseChannel.clock();
     }
+
+    if (CyclesPerSample-- <= 0) {
+        CyclesPerSample += CycleReload;
+        if (NoiseChannel.noiseQueue.size() < 4096)
+            NoiseChannel.sample();
+        if (DMCChannel.sampleBuffer.size() < 4096)
+            DMCChannel.sampleBuffer.push(DMCChannel.output);       
+    }
+
+    if (DMCChannel.rate-- == 0) {
+        DMCChannel.rate = DMCChannel.reload;
+        DMCChannel.clock();
+    }
+
     
     //Try checking for an empty DMC buffer here, then trigger the memory reader if necessary
     if (DMCChannel.bufferEmpty && DMCChannel.bytesRemain && DMCChannel.enabled) {
@@ -149,7 +164,7 @@ bool APU::Pulse_Out() {
     } else {
         return false;
     } 
-    
+
 }
 
 
@@ -179,7 +194,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             PulseOneSwp.truePeriod = PulseOne.timer;
             PulseOneSwp.calculatePeriod();
 
-            PulseOne.period = floor((1.0f / (round(1789773 / ((PulseOne.timer + 1) << 4)) / 2.0f) ) * SAMPLE_RATE) * 2;
+            PulseOne.period = floor((1.0f / (round(1789773 / ((PulseOne.timer + 1) << 4)) / 2.0f)) * SAMPLE_RATE);
             PulseOne.highAmnt = floor(PulseOne.dutyCycle * PulseOne.period);
             PulseOne.lowAmnt = floor(PulseOne.period - PulseOne.highAmnt);
             break;
@@ -192,7 +207,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
                 PulseOne.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
             PulseOneEnv.startFlag = true;
 
-            PulseOne.period = floor((1.0f / (round(1789773 / ((PulseOne.timer + 1) << 4)) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseOne.period = floor((1.0f / (round(1789773 / ((PulseOne.timer + 1) << 4)) / 2.0f)) * SAMPLE_RATE);
             PulseOne.highAmnt = floor(PulseOne.dutyCycle * PulseOne.period);
             PulseOne.lowAmnt = floor(PulseOne.period - PulseOne.highAmnt);
             break;
@@ -216,7 +231,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             PulseTwoSwp.truePeriod = PulseTwo.timer;
             PulseTwoSwp.calculatePeriod();
 
-            PulseTwo.period = floor((1.0f / (round(1789773 / ((PulseTwo.timer + 1) << 4)) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseTwo.period = floor((1.0f / (round(1789773 / ((PulseTwo.timer + 1) << 4)) / 2.0f)) * SAMPLE_RATE);
             PulseTwo.highAmnt = floor(PulseTwo.dutyCycle * PulseTwo.period);
             PulseTwo.lowAmnt = floor(PulseTwo.period - PulseTwo.highAmnt);
             break;
@@ -229,7 +244,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
                 PulseTwo.lengthCount = LENGTH_TABLE[((data & 0xF8) >> 3)];
             PulseTwoEnv.startFlag = true;
 
-            PulseTwo.period = floor((1.0f / (round(1789773 / ((PulseTwo.timer + 1) << 4)) / 2.0f)) * SAMPLE_RATE) * 2;
+            PulseTwo.period = floor((1.0f / (round(1789773 / ((PulseTwo.timer + 1) << 4)) / 2.0f)) * SAMPLE_RATE);
             PulseTwo.highAmnt = floor(PulseTwo.dutyCycle * PulseTwo.period);
             PulseTwo.lowAmnt = floor(PulseTwo.period - PulseTwo.highAmnt);
             break;
@@ -278,18 +293,22 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
 
             DMCChannel.loop = data & 0x40;
             DMCChannel.rate = DMC_RATE[data & 0x0F];
-            DMCChannel.reload = DMCChannel.rate;
+            DMCChannel.reload = DMC_RATE[data & 0x0F];
+            //std::cout <<"Set dmc rate to: " << int(DMCChannel.reload) << '\n';
             break;
         case 0x11:
             DMCChannel.output = data & 0x7F;
+            //std::cout <<"Set dmc output to: " << int(data & 0x7F) << '\n';
             break;
 
         case 0x12:
             DMCChannel.sampAddress = 0xC000 + (data * 64);
+            //std::cout << "Address set to: " << std::hex << DMCChannel.sampAddress << '\n';
             break;
 
         case 0x13:
             DMCChannel.sampLength = (16 * data) + 1;
+            //std::cout << "Samp length set to: " << DMCChannel.sampLength << '\n';
             break;
 
         case 0x15: //Enables or disables single channels
@@ -318,6 +337,7 @@ void APU::Reg_Write(uint16_t reg, uint8_t data) {
             } else
                 NoiseChannel.enabled = true;
 
+            //Any writes here should trigger playback if samples are queued
             if (!(data & 0x10)) {
                 DMCChannel.bytesRemain = 0;
                 DMCChannel.enabled = false;

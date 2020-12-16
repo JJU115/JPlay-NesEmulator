@@ -5,9 +5,12 @@
 #include <cmath>
 #include <array>
 #include <SDL.h>
+#include <iostream>
+#include <queue>
 
 
-const int SAMPLE_RATE = 88200; //44100
+const int SAMPLE_RATE = 88200;
+
 
 const std::array<float, 4> PULSE_DUTY = {0.125, 0.25, 0.50, 0.75};
 
@@ -125,7 +128,7 @@ struct Pulse {
             return 0;
 
         if (pulseSweep->change) {
-            period = floor((1.0f / (round(1789773 / (16 * (pulseSweep->truePeriod + 1))) / 2.0f)) * SAMPLE_RATE) * 2;
+            period = floor((1.0f / (round(1789773 / (16 * (pulseSweep->truePeriod + 1))) / 2.0f)) * SAMPLE_RATE);
             highAmnt = floor(dutyCycle * period);
             lowAmnt = floor(period - highAmnt);
             pulseSweep->change = false;
@@ -193,7 +196,7 @@ struct Triangle {
 
 
     void recalculate() {
-        period = round(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE * 2);
+        period = round(((32 * (timer + 1))/ 1789773.0f) * SAMPLE_RATE);
         base = period / 32.0f;
         extra = round((base - floor(base)) * 32); //extra values to distribute
         start = (extra % 2 == 0) ? 15-(extra/2) : 16-(extra/2);
@@ -237,6 +240,7 @@ struct Noise {
     double avg;
 
     uint8_t seq;
+    std::queue<bool> noiseQueue;
 
     void clock() {
         feedBack = (shiftReg & 0x0001) ^ ((mode) ? ((shiftReg & 0x0040) >> 6) : ((shiftReg & 0x0002) >> 1));
@@ -245,8 +249,12 @@ struct Noise {
         shiftReg |= (feedBack << 14);
     }
 
-    double getSample() {    
-        if (!lengthCount)
+    void sample() {
+        noiseQueue.push(feedBack);
+    }
+
+    uint8_t getSample() {    
+        /*if (!lengthCount)
             return 0;
 
         //save current feedback
@@ -261,7 +269,14 @@ struct Noise {
         }
 
         //return feedback
-        return avg * noiseEnvelope->getVol();
+        return avg * noiseEnvelope->getVol();*/
+        if ((noiseQueue.size() == 0) || (!lengthCount))
+            return 0;
+        else {
+            uint8_t front = noiseQueue.front() * noiseEnvelope->getVol();
+            noiseQueue.pop();
+            return front;
+        }
     }
 };
 
@@ -269,9 +284,9 @@ struct Noise {
 struct DMC {
     uint8_t buffer;
     uint8_t output;
-    uint8_t sampAddress; //Reg $4012
-    uint8_t sampLength; //Reg $4013
-    uint8_t bytesRemain;
+    uint16_t sampAddress; //Reg $4012
+    uint16_t sampLength; //Reg $4013
+    uint16_t bytesRemain;
     uint8_t shiftReg;
     uint8_t bitsRemain;
 
@@ -285,14 +300,17 @@ struct DMC {
     bool silence;
     bool bufferEmpty;
     bool interrupt;
-    bool newCycle;
 
     Cartridge* ROM;
+    std::queue<uint8_t> sampleBuffer;
 
 
     //When the timer hits 0 it clocks the output unit
     //Note the timer is decremented every APU cycle
     void clock() {
+        if (!enabled)
+            return;
+
         if (!silence) {
             if (shiftReg & 0x01)
                 output += (output < 126) ? 2 : 0;
@@ -301,6 +319,7 @@ struct DMC {
         }    
 
         shiftReg = shiftReg >> 1;
+        bitsRemain -= (bitsRemain == 0) ? 0 : 1;
 
         if (bitsRemain == 0) {
             bitsRemain = 8;
@@ -313,7 +332,6 @@ struct DMC {
             }
         }
 
-        bitsRemain--;
     }
 
     void memoryRead() {
@@ -321,16 +339,28 @@ struct DMC {
         if (bytesRemain) {
             buffer = ROM->CPU_ACCESS(currAddress);
             bufferEmpty = false;
-
+            //std::cout << std::hex << int(buffer) <<  "at " << currAddress << '\n';
+            //std::cout << "Bytes remain: " << int(bytesRemain) << '\n';
             currAddress = (currAddress == 0xFFFF) ? 0x8000 : (currAddress + 1);
-            bytesRemain--;
+            --bytesRemain;     
         }
 
-         if (!bytesRemain && loop) {
+        if (!bytesRemain && loop) {
             currAddress = sampAddress;
             bytesRemain = sampLength;
         } else if (!bytesRemain && IRQEnabled)
             interrupt = true;     
+    }
+
+    uint8_t getSample() {
+        if (sampleBuffer.size() == 0)
+            return output;
+        else {
+            uint8_t front = sampleBuffer.front();
+            sampleBuffer.pop();
+            return front;
+        }
+
     }
 };
 
@@ -345,12 +375,12 @@ struct Mixer {
     Noise *noise;
     DMC *dmc;
 
+
     std::array<double, 31> pulseMixTable;
     std::array<double, 203> tndTable;
     double mixAudio(long sampleNum) {
-        double pulseOut = pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)]; 
-        double tndOut = tndTable[2 * noise->getSample() + 3 * tri->getSample()];
-        return tndOut + pulseOut;
+        return pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)] + 
+            tndTable[dmc->getSample() + 2 * noise->getSample() + 3 * tri->getSample()];      
     }
 };
 
@@ -362,6 +392,9 @@ class APU {
                 Pulse2TimeHigh(0), TriLinearCount(0), TriTimerHigh(0), TriTimerLow(0), NoiseControl(0), NoiseLength(0), 
                 FrameCount(0), CpuCycles(0), ApuCycles(0), FrameInterrupt(false), FireIRQ(0) {
               
+            CyclesPerSample = 1789773.0 / float(SAMPLE_RATE);
+            CycleReload = CyclesPerSample;
+
             AudioMixer = {};
             PulseOneEnv = {};
             PulseOneSwp = {};
@@ -385,7 +418,6 @@ class APU {
             NoiseChannel.noiseEnvelope = &NoiseEnv;
 
             DMCChannel = {};
-            DMCChannel.output = 0;
             DMCChannel.bufferEmpty = true;
             DMCChannel.ROM = &NES;
 
@@ -398,18 +430,21 @@ class APU {
             want.freq = SAMPLE_RATE; // number of samples per second
             want.format = AUDIO_F32SYS;
             want.channels = 1;
-            want.samples = 2048; // buffer-size
+            want.samples = 1024; // buffer-size
             want.userdata = &AudioMixer;
+           
 
             for (int i=0; i<31; i++)
                 AudioMixer.pulseMixTable[i] = 95.52 / (8128.0 / (double)i + 100);
                 
             for (int i=0; i<203; i++)
                 AudioMixer.tndTable[i] = 163.67 / (24329.0 / ((double)i + 100));
+
              
             Open_Audio();
         }
 
+    
         long CpuCycles;
         uint16_t ApuCycles;
         uint8_t FireIRQ;
@@ -463,10 +498,14 @@ class APU {
         
         //Other
         SDL_AudioSpec want;
+        SDL_AudioDeviceID dev;
         bool FrameInterrupt;
+        float CyclesPerSample;
+        float CycleReload;
 
         std::array<double, 31> PulseMixTable;
         std::array<double, 203> TndTable;
+
 };
 
 

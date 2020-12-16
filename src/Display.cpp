@@ -16,6 +16,7 @@ Display::Display() {
 Display::~Display() {
     SDL_DestroyRenderer(NesRenderer);
     SDL_DestroyWindow(NesWindow);
+    SDL_CloseAudio();
     SDL_Quit();
 }
 

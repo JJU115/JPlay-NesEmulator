@@ -7,6 +7,7 @@
 
 bool pause;
 bool Gamelog;
+bool quit;
 long CPUCycleCount;
 SDL_cond* mainPPUCond;
 SDL_mutex* mainThreadMutex;
@@ -18,13 +19,13 @@ int PPU_Run(void* data);
 
  
 int main(int argc, char *argv[]) {
+    Display Screen;
     Cartridge C;
     APU RICOH_2A03(C);
     PPU RICOH_2C02(C);
     CPU MOS_6502(C, RICOH_2C02, RICOH_2A03);
-    Display Screen;
     SDL_Event evt;
-    bool quit = false;
+    quit = false;
     pause = false;
     Gamelog = false;
 
@@ -97,13 +98,13 @@ int main(int argc, char *argv[]) {
         //Wait if needed
         frameEnd = std::chrono::high_resolution_clock::now();
         elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
-        std::cout << "FPS: " << (1000/elapsedTime) << '\n';
+        //std::cout << "FPS: " << (1000/elapsedTime) << '\n';
         if (elapsedTime < 16)
             std::this_thread::sleep_for(std::chrono::milliseconds(16 - elapsedTime));
          
         //std::cout << "Frame done\n";
     }
-
+    
     return 0;
 }
 

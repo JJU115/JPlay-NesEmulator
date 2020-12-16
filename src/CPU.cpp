@@ -10,6 +10,7 @@
 
 extern bool pause;
 extern bool Gamelog;
+extern bool quit;
 extern long CPUCycleCount;
 extern SDL_mutex* CpuPpuMutex;
 
@@ -369,6 +370,9 @@ void CPU::RUN() {
         if (Gamelog) {
             LOG << OPCODES[CODE] << "\t\t" << LOG_STREAM.str() << '\n';
         }
+
+        if (quit)
+            break;
     }
 }
 

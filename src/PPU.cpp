@@ -10,6 +10,7 @@ extern SDL_mutex* mainThreadMutex;
 extern std::condition_variable CPU_COND;
 extern bool pause;
 extern bool Gamelog;
+extern bool quit;
 extern long CPUCycleCount;
 extern SDL_mutex* CpuPpuMutex;
 
@@ -88,6 +89,9 @@ void PPU::RESET() {
 
 
 void PPU::CYCLE(uint16_t N) {
+    if (quit)
+        return;
+
     while(pause)
         std::this_thread::yield();
 
@@ -97,7 +101,7 @@ void PPU::CYCLE(uint16_t N) {
         ++cycleCount;
         SDL_UnlockMutex(CpuPpuMutex);
 
-        while (cycleCount > 14)
+        while ((cycleCount > 14) && !quit)
             std::this_thread::yield();
 
     }
@@ -113,7 +117,7 @@ void PPU::GENERATE_SIGNAL() {
     SLINE_NUM = 0;
     P_LOG.open("PPU_LOG.txt", std::ios::trunc | std::ios::out);
     
-    while (true) {
+    while (!quit) {
         //These two calls ensure the main thread is waiting on its condition variable before the PPU goes any further
         if (SDL_LockMutex(mainThreadMutex) != 0)
             std::cout << "Lock failed\n";
@@ -136,7 +140,7 @@ void PPU::GENERATE_SIGNAL() {
         CYCLE(1);
     
         //Here, 82523 or 82522 PPU cycles have elapsed, CPU should be at 27507 cycles (with 2/3 through one more)
-        while (cycleCount > 2)
+        while ((cycleCount > 2) && !quit)
             std::this_thread::yield();    
 
         PPUSTATUS |= 0x80; //VBLANK flag is actually only set in the 2nd tick of scanline 241 
@@ -154,7 +158,7 @@ void PPU::GENERATE_SIGNAL() {
         CYCLE(20 * 341);  
         NMI_OCC = 0;
        
-        while (cycleCount > 2) //29781 every other frame
+        while ((cycleCount > 2) && !quit) //29781 every other frame
             std::this_thread::yield();
         
         CPUCycleCount = 0;

@@ -254,22 +254,6 @@ struct Noise {
     }
 
     uint8_t getSample() {    
-        /*if (!lengthCount)
-            return 0;
-
-        //save current feedback
-        avg = feedBack;
-
-        //elapse 20 samples, clocking every (2*period) samples
-        for (int i=0; i<20; i++) {
-            if (++seq == timer/(mode+1)) {
-                clock();
-                seq = 0;
-            }
-        }
-
-        //return feedback
-        return avg * noiseEnvelope->getVol();*/
         if ((noiseQueue.size() == 0) || (!lengthCount))
             return 0;
         else {

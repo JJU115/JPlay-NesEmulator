@@ -110,7 +110,7 @@ void PPU::CYCLE(uint16_t N) {
 
 void PPU::GENERATE_SIGNAL() {
     OAM_PRIMARY.assign(256, 0);
-    OAM_SECONDARY.assign(32, 255); //Problem here?
+    OAM_SECONDARY.reserve(32);
     cycleCount = 0;
     
     VRAM.fill(0);
@@ -221,7 +221,8 @@ void PPU::PRE_RENDER() {
 
 //Sprite evaluation for the next scanline occurs at the same time
 void PPU::SCANLINE(uint16_t SLINE) {
-    OAM_SECONDARY.assign(32, 255);
+    //OAM_SECONDARY.assign(32, 255);  //Potentially unnecessary op
+    OAM_SECONDARY.clear();
     TICK = 0;
     uint8_t NTABLE_BYTE, PTABLE_LOW, PTABLE_HIGH, ATTR_BYTE;
     uint8_t activeSprites = 0;
@@ -378,31 +379,41 @@ void PPU::SCANLINE(uint16_t SLINE) {
 
 
         //Sprite eval - happens if either background or sprite rendering is enabled
+        //Consider making 2nd OAM variable size and avoid fully assigning content at start of scanline function 
          if (TICK >= 65 && ((PPUMASK & 0x10) || (PPUMASK & 0x08))) {
             switch (step) {
                 case 1: //Reads OAM y-cord and determines if in range
                     if ((TICK % 2) == 1)
                         data = OAM_PRIMARY[n << 2];
                     else if (foundSprites < 8) {
-                        OAM_SECONDARY[foundSprites << 2] = data;
-                        if (In_range(data, SLINE+1, PPUCTRL & 0x20))
+                        //OAM_SECONDARY[foundSprites << 2] = data;
+                        if (In_range(data, SLINE+1, PPUCTRL & 0x20)) {
                             step = 2;
-                        else
-                            IncN();
+                            OAM_SECONDARY.push_back(data);
+                        } else
+                            IncN();     
                     }
                     break;
                 case 2: //Copies next 3 bytes if y-cord in range
                     if ((TICK % 2) == 1) {
                         data = OAM_PRIMARY[(n << 2) + offset];
                     } else {
-                        OAM_SECONDARY[(foundSprites << 2) + offset++] = data;
-                        if (offset == 4) { //All bytes copied
+                        //OAM_SECONDARY[(foundSprites << 2) + offset++] = data;
+                        OAM_SECONDARY.push_back(data);
+                       /* if (offset == 4) { //All bytes copied
                             offset = 1;
                             spriteZeroRenderedNext = (n == 0) ? true : spriteZeroRenderedNext;
                             ++foundSprites;
                             IncN();
                             break;
-                        }     
+                        }*/ 
+                        if (++offset == 4) {
+                            offset = 1;
+                            spriteZeroRenderedNext = (n == 0) ? true : spriteZeroRenderedNext;
+                            ++foundSprites;
+                            IncN();
+                            break;
+                        }
                     }                                 
                     break;
                 case 4: //Evaluating OAM contents
@@ -441,7 +452,8 @@ void PPU::SCANLINE(uint16_t SLINE) {
     SPR_PAT.clear();
     uint16_t SPR_PAT_ADDR;
     for(int i=0; i < 8; i++) {
-        if ((OAM_SECONDARY.size() < ((i+1) << 2)) || (foundSprites == 0)) {
+        //2nd OAM size is always going to be 32 as performed on first line of SCANLINE function
+        if (foundSprites == 0) {
             CYCLE(8);
         } else {
             SPR_ATTRS.push_back(OAM_SECONDARY[(i << 2) + 2]);
@@ -470,24 +482,22 @@ void PPU::SCANLINE(uint16_t SLINE) {
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR));
                 SPR_PAT.push_back(FETCH(SPR_PAT_ADDR + 8));
             }
+
             CYCLE(8);
 
             //Handle horizontal flipping here
             if (SPR_ATTRS.back() & 0x40) {
                 auto flip_byte = [](uint8_t A) {
-                    uint8_t B = 0;
-                    for (uint8_t i=0; i<7; i++) {
-                        B |= (A & 0x01);
-                        B <<= 1;
-                        A >>= 1;
-                    }
-                    return (B | A);
+                    A = (A & 0xF0) >> 4 | (A & 0x0F) << 4;
+                    A = (A & 0xCC) >> 2 | (A & 0x33) << 2;
+                    A = (A & 0xAA) >> 1 | (A & 0x55) << 1;
+                    return A;
                 };
 
                 SPR_PAT.back() = flip_byte(SPR_PAT.back());
                 SPR_PAT[SPR_PAT.size() - 2] = flip_byte(SPR_PAT[SPR_PAT.size() - 2]);
             }
-            foundSprites--;
+            --foundSprites;
         }
         
         if ((TICK == 281) && (PPUMASK & 0x18))

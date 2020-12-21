@@ -131,10 +131,11 @@ uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R, bool NT_M) {
         if (ChrRam)
             return CHR_ROM[ADDR];
         
-        if (M->PPU_READ(ADDR, false) >= CHR_ROM.size()) 
+        uint32_t p = M->PPU_READ(ADDR, false);
+        if (p >= CHR_ROM.size()) 
             std::cout << "CHR OB Read " << ADDR << " --- " << M->PPU_READ(ADDR, false) << '\n';
 
-        return CHR_ROM[M->PPU_READ(ADDR, false)]; 
+        return CHR_ROM[p]; 
 
     } else if (ChrRam) {
         //Write. Only if the board contains CHR RAM 

@@ -166,7 +166,7 @@ void CPU::RUN() {
     bool unofficial = false;
     uint8_t cycleCount;
     const uint8_t *keyboard = SDL_GetKeyboardState(NULL);
-
+    
     //Enable logging
     LOG.open("CPU_LOG.txt", std::ios::trunc | std::ios::out);
     
@@ -203,16 +203,19 @@ void CPU::RUN() {
             LOG << std::hex << PROG_CNT << ": ";
         CODE = FETCH(PROG_CNT++);
         cycleCount = 1;
+
+
         
         //Compose a string and append after EXEC
-        LOG_STREAM.str(std::string());
-        if (Gamelog)
+        if (Gamelog) {
+            LOG_STREAM.str(std::string());
             LOG << std::hex << int(CODE) << " ";
-        LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
-        LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
-        LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
-        LOG_STREAM << "STAT:" << std::hex << int(STAT) << " ";
-        LOG_STREAM << "SP:" << std::hex << int(STCK_PNT);
+            LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
+            LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
+            LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
+            LOG_STREAM << "STAT:" << std::hex << int(STAT) << " ";
+            LOG_STREAM << "SP:" << std::hex << int(STCK_PNT);
+        }
 
         //Stack Access Instructions and JMP
         switch (CODE) {

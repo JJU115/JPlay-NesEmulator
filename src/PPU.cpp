@@ -224,27 +224,26 @@ void PPU::SCANLINE(uint16_t SLINE) {
     //OAM_SECONDARY.assign(32, 255);  //Potentially unnecessary op
     OAM_SECONDARY.clear();
     TICK = 0;
-    uint8_t NTABLE_BYTE, PTABLE_LOW, PTABLE_HIGH, ATTR_BYTE;
-    uint8_t activeSprites = 0;
-    uint16_t BGPIXEL, SPPIXEL;
-    uint16_t fineXSelect = 0x8000 >> Fine_x;
-    uint32_t COL;
+    //uint8_t NTABLE_BYTE, PTABLE_LOW, PTABLE_HIGH, ATTR_BYTE;
+    activeSprites = 0;
+    //uint16_t BGPIXEL, SPPIXEL;
+    fineXSelect = 0x8000 >> Fine_x;
+    //uint32_t COL;
 
-    bool spriteZeroRenderedNext = false;
-    bool spriteZeroHit = false; //true if zero hit has occurred
-    bool spriteZeroLoaded = false;
-    bool spriteHasPriority = false;
+    spriteZeroRenderedNext = false;
+    spriteZeroHit = false; //true if zero hit has occurred
+    spriteZeroLoaded = false;
+    spriteHasPriority = false;
 
-    bool hideLeftBg = !(PPUMASK & 0x02);
-    bool hideLeftSpr = !(PPUMASK & 0x04);
+    hideLeftBg = !(PPUMASK & 0x02);
+    hideLeftSpr = !(PPUMASK & 0x04);
 
     //For sprite eval
-    uint8_t n = 0;
-    uint8_t m = 0;
-    uint8_t step = 1;
-    uint8_t data;
-    uint8_t offset = 1;
-    uint8_t foundSprites = 0;
+    n = 0;
+    m = 0;
+    step = 1;
+    offset = 1;
+    foundSprites = 0;
     auto In_range = [](uint8_t yPos, uint16_t slineNum, bool sprSize) {
         int16_t diff = yPos - slineNum;
         return (sprSize) ? ((diff <= -1) && (diff >= -16)) : ((diff <= -1) && (diff >= -8));

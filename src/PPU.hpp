@@ -86,6 +86,29 @@ class PPU {
         bool spriteZeroRendered;
         bool Reset;
 
+        //Scanline variables
+        uint8_t NTABLE_BYTE, PTABLE_LOW, PTABLE_HIGH, ATTR_BYTE;
+        uint8_t activeSprites;
+        uint16_t BGPIXEL, SPPIXEL;
+        uint16_t fineXSelect;
+        uint32_t COL;
+
+        //Sprite eval variables
+        uint8_t n;
+        uint8_t m;
+        uint8_t step;
+        uint8_t data;
+        uint8_t offset;
+        uint8_t foundSprites;
+
+        //bools for sprite eval and rendering
+        bool spriteZeroRenderedNext;
+        bool spriteZeroHit;
+        bool spriteZeroLoaded;
+        bool spriteHasPriority;
+        bool hideLeftBg;
+        bool hideLeftSpr;
+
 };
 
 

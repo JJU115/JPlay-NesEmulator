@@ -1,7 +1,6 @@
 #ifndef CPU_H
 #define CPU_H
 
-
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -11,6 +10,7 @@
 #include <mutex>
 #include <condition_variable>
 
+typedef uint8_t(*Instr)();
 
 class CPU {
     public:
@@ -41,6 +41,9 @@ class CPU {
         bool IRQDelay;
         bool IRQPend;
         const uint8_t *keyboard;
+
+
+        std::array<Instr, 256> InstructionLookup;
 
 };
 

@@ -161,6 +161,12 @@ void CPU::IRQ_NMI(uint16_t V) {
 }
 
 
+/* All the instructions as functions to be pointed to */
+
+
+
+
+
 void CPU::RUN() {
     RAM.fill(0); //Clear RAM
     bool unofficial = false;

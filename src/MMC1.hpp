@@ -12,7 +12,7 @@ class MMC1 : public Mapper {
         MMC1(uint8_t P,  uint8_t C) : Mapper(P, C), LOAD(0x80), SHIFT(0x10), CONTROL(0x1C), PRG_BANK(0), CHR_BANK1(0), CHR_BANK2(0),
         PBANK1(0), PBANK2(P-1), NUM_BANKS(P) { } 
         uint32_t CPU_READ(uint16_t ADDR);
-        uint32_t PPU_READ(uint16_t ADDR, bool NT);
+        uint32_t PPU_READ(uint16_t ADDR);
         void CPU_WRITE(uint16_t ADDR, uint8_t VAL);
         void PPU_WRITE(uint16_t ADDR);
     private:

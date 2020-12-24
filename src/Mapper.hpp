@@ -12,7 +12,7 @@ class Mapper {
         Mapper() {}
         Mapper(uint16_t P, uint16_t C): Irq(false), Counter(0), PRG_BANKS(P), CHR_BANKS(C) {}
         virtual uint32_t CPU_READ(uint16_t ADDR) = 0;
-        virtual uint32_t PPU_READ(uint16_t ADDR, bool NT) = 0;
+        virtual uint32_t PPU_READ(uint16_t ADDR) = 0;
         virtual void CPU_WRITE(uint16_t ADDR, uint8_t VAL) = 0;
         virtual void PPU_WRITE(uint16_t ADDR) = 0;
         virtual void Scanline() { }
@@ -23,12 +23,13 @@ class Mapper {
         uint8_t PRG_BANKS;  //In 16KB
         uint8_t CHR_BANKS;  //In 8KB
 
+    public:
         enum MirrorMode {SingleLower, SingleUpper, Vertical, Horizontal} NT_MIRROR;
 
 
-        uint16_t SelectNameTable(uint16_t ADDR, MirrorMode M) {
+        uint16_t SelectNameTable(uint16_t ADDR) {
 
-            switch (M) {
+            switch (NT_MIRROR) {
                 case Vertical:
                     return (ADDR > 0x27FF) ? (ADDR % 0x2800) : (ADDR % 0x2000);
                     break;

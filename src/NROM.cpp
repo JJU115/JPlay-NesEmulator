@@ -7,7 +7,6 @@ inline uint32_t NROM::CPU_READ(uint16_t ADDR) {
 }
 
 //For nametable reads, want to put every address within a 0x2000 - 0x27FF range
-inline uint32_t NROM::PPU_READ(uint16_t ADDR, bool NT) {
-
-    return (NT) ? SelectNameTable(ADDR, NT_MIRROR) : ADDR;
+inline uint32_t NROM::PPU_READ(uint16_t ADDR) {
+    return ADDR;
 }

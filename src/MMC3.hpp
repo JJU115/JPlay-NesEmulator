@@ -13,7 +13,7 @@ class MMC3 : public Mapper {
     public:
         //Assuming IRQs are disabled at startup
         MMC3(uint8_t P, uint8_t C) : Mapper(2*P, 8*C), BankSelect(0), TargetBank(0), BankData(0), ChrInversion(false), PrgInversion(false),
-        ChrMode(false), PrgMode(false), Mirroring(Vertical), IrqLatch(0), IrqReload(false), IrqEnable(false), Set(false)
+        ChrMode(false), PrgMode(false), IrqLatch(0), IrqReload(false), IrqEnable(false), Set(false)
         { 
             PrgBanks[1] = PRG_BANKS - 2;
             PrgBanks[2] = PRG_BANKS - 2;
@@ -23,9 +23,10 @@ class MMC3 : public Mapper {
                 ChrBanks[i] = i; 
 
             Irq = false;
+            NT_MIRROR = Vertical;
         }
         uint32_t CPU_READ(uint16_t ADDR);
-        uint32_t PPU_READ(uint16_t ADDR, bool NT);
+        uint32_t PPU_READ(uint16_t ADDR);
         void CPU_WRITE(uint16_t ADDR, uint8_t VAL);
         void PPU_WRITE(uint16_t ADDR);
         void Scanline();
@@ -42,7 +43,6 @@ class MMC3 : public Mapper {
         bool ChrMode;
         bool PrgMode;
         uint8_t BankData;
-        MirrorMode Mirroring;
         uint8_t IrqLatch;
 
         //IRQ flags

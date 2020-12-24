@@ -24,10 +24,7 @@ uint32_t MMC1::CPU_READ(uint16_t ADDR) {
 //There are four mirroring possibilities here: vertical, horizontal, one (low), one (high) 
 //Should really just use an enum
 //Need to implement proper selection based on CHR bank positions
-uint32_t MMC1::PPU_READ(uint16_t ADDR, bool NT) {
-    if (NT)
-        return SelectNameTable(ADDR, static_cast<MirrorMode>(CONTROL & 0x03));
-
+uint32_t MMC1::PPU_READ(uint16_t ADDR) {
     if (CONTROL & 0x10)  //Two switchable 4 KB banks
         return (ADDR < 0x1000) ? CHR_BANK_SIZE * (CHR_BANK1 % (2 * CHR_BANKS)) + ADDR : CHR_BANK_SIZE * (CHR_BANK2 % (2 * CHR_BANKS)) + (ADDR % 0x1000);
     else  //One switchable 8 KB bank
@@ -60,6 +57,7 @@ void MMC1::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
             switch (ADDR & 0x6000) {
                 case 0:
                     CONTROL = SHIFT;
+                    NT_MIRROR = static_cast<MirrorMode>(CONTROL & 0x03);
                     switch ((CONTROL & 0x0C) >> 2) {
                         case Fixed32M0: //Switch 32 KB at $8000, ignore low bit of bank number
                         case Fixed32M1:

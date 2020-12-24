@@ -12,7 +12,6 @@
 #include <thread>
 #include <cstdint>
 #include <vector>
-#include <utility>
 #include "Cartridge.hpp"
 #include <mutex>
 #include <condition_variable>

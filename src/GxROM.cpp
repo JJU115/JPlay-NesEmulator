@@ -7,9 +7,8 @@ inline uint32_t GxROM::CPU_READ(uint16_t ADDR) {
 }
 
 
-inline uint32_t GxROM::PPU_READ(uint16_t ADDR, bool NT) {
-
-    return (NT) ? SelectNameTable(ADDR, NT_MIRROR) : (ChrBank * CHR_BANK_SIZE * 2) + ADDR;
+inline uint32_t GxROM::PPU_READ(uint16_t ADDR) {
+    return (ChrBank * CHR_BANK_SIZE * 2) + ADDR;
 }
 
 

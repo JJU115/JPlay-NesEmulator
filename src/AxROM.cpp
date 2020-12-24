@@ -9,10 +9,7 @@ inline uint32_t AxROM::CPU_READ(uint16_t ADDR) {
 
 
 
-inline uint32_t AxROM::PPU_READ(uint16_t ADDR, bool NT) {
-    if (NT) 
-        return SelectNameTable(ADDR, SingleScreen);
-       
+inline uint32_t AxROM::PPU_READ(uint16_t ADDR) {
     return ADDR;
 }
 
@@ -24,7 +21,7 @@ inline uint32_t AxROM::PPU_READ(uint16_t ADDR, bool NT) {
 inline void AxROM::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
     if (ADDR > 0x7FFF) {
         PrgBank = VAL & 0x07;
-        SingleScreen = static_cast<MirrorMode>((VAL & 0x10) >> 4);
+        NT_MIRROR = static_cast<MirrorMode>((VAL & 0x10) >> 4);
     }
 }
 

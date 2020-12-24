@@ -9,9 +9,8 @@ inline uint32_t UxROM::CPU_READ(uint16_t ADDR) {
 }
 
 
-inline uint32_t UxROM::PPU_READ(uint16_t ADDR, bool NT) {
-
-    return (NT) ? SelectNameTable(ADDR, NT_MIRROR) : ADDR;
+inline uint32_t UxROM::PPU_READ(uint16_t ADDR) {
+    return ADDR;
 }
 
 

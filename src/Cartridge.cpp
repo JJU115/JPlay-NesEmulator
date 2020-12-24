@@ -124,16 +124,16 @@ uint8_t Cartridge::CPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R) {
 
 uint16_t Cartridge::PPU_ACCESS(uint16_t ADDR, uint8_t VAL, bool R, bool NT_M) {
     if (NT_M)
-        return M->PPU_READ(ADDR, NT_M);
+        return M->SelectNameTable(ADDR);
 
     if (R) {
 
         if (ChrRam)
             return CHR_ROM[ADDR];
         
-        uint32_t p = M->PPU_READ(ADDR, false);
+        uint32_t p = M->PPU_READ(ADDR);
         if (p >= CHR_ROM.size()) 
-            std::cout << "CHR OB Read " << ADDR << " --- " << M->PPU_READ(ADDR, false) << '\n';
+            std::cout << "CHR OB Read " << ADDR << " --- " << M->PPU_READ(ADDR) << '\n';
 
         return CHR_ROM[p]; 
 

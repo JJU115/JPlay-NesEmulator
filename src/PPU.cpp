@@ -34,6 +34,7 @@ uint8_t PPU::FETCH(uint16_t ADDR) {
     if (ADDR <= 0x2FFF)
         return VRAM[ROM->PPU_ACCESS(ADDR, 0, true, true)];
         
+        
     //Palette RAM
     if (ADDR <= 0x3F1F) {
         if ((ADDR % 4) == 0)

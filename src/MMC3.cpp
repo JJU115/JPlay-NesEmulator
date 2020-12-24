@@ -13,11 +13,7 @@ inline uint32_t MMC3::CPU_READ(uint16_t ADDR) {
 
 //For nametable fetches, need to consider what happens when 4-screen VRAM is dictated by the iNES header thus ignoring
 //the mirroring register. Only one game for MMC3 does this however - Rad Racer 2
-inline uint32_t MMC3::PPU_READ(uint16_t ADDR, bool NT) {
-
-    if (NT)
-        return SelectNameTable(ADDR, Mirroring);
-
+inline uint32_t MMC3::PPU_READ(uint16_t ADDR) {
     return (ChrBanks[ADDR / 0x0400] * 1024 + (ADDR % 0x0400));
 }
 
@@ -78,7 +74,7 @@ void MMC3::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
             break;
         case 0xA000:
             if ((ADDR % 2) == 0)
-                Mirroring = (VAL & 0x01) ? Horizontal : Vertical;
+                NT_MIRROR = (VAL & 0x01) ? Horizontal : Vertical;
             break;
         case 0xC000:
             if (ADDR & 1) {

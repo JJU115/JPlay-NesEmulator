@@ -10,10 +10,8 @@ inline uint32_t CxROM::CPU_READ(uint16_t ADDR) {
 }
 
 
-inline uint32_t CxROM::PPU_READ(uint16_t ADDR, bool NT) {
-
-    return (NT) ? SelectNameTable(ADDR, NT_MIRROR) : CHR_BANK * 2 * CHR_BANK_SIZE + ADDR;
-
+inline uint32_t CxROM::PPU_READ(uint16_t ADDR) {
+    return CHR_BANK * 2 * CHR_BANK_SIZE + ADDR;
 }
 
 

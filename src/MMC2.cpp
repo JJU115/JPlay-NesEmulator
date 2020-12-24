@@ -15,11 +15,7 @@ uint32_t MMC2::CPU_READ(uint16_t ADDR) {
 }
 
 
-uint32_t MMC2::PPU_READ(uint16_t ADDR, bool NT) {
-
-    if (NT)
-        return SelectNameTable(ADDR, Mirroring);
-
+uint32_t MMC2::PPU_READ(uint16_t ADDR) {
     if (ADDR < 0x1000)
         Read = (LatchZero == 0xFD) ? (ChrBankLowFD * CHR_BANK_SIZE) + ADDR : (ChrBankLowFE * CHR_BANK_SIZE) + ADDR;
     else
@@ -62,7 +58,7 @@ void MMC2::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
             ChrBankHighFE = (VAL & 0x1F);
             break;
         case 0xF000:
-            Mirroring = (VAL & 0x01) ? Horizontal : Vertical;
+            NT_MIRROR = (VAL & 0x01) ? Horizontal : Vertical;
             break;
     }
 }

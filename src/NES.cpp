@@ -111,7 +111,7 @@ int main(int argc, char *argv[]) {
 
 int CPU_Run(void* data) {
     
-    ((CPU* )data)->RUN();
+    ((CPU* )data)->Start();
     
     return 0;
 }

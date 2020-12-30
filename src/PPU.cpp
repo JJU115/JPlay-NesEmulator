@@ -126,10 +126,11 @@ void PPU::GENERATE_SIGNAL() {
             std::cout << "Unlock failed\n";
 
         PRE_RENDER();
-
+        P_LOG << CPUCycleCount << '\n';
         while (SLINE_NUM < 240) {
             SCANLINE(SLINE_NUM++);
         }
+        
         ++SLINE_NUM;
         TICK = 0;
         SDL_CondSignal(mainPPUCond);
@@ -162,6 +163,7 @@ void PPU::GENERATE_SIGNAL() {
         while ((cycleCount > 2) && !quit) //29781 every other frame
             std::this_thread::yield();
         
+        //std::cout << CPUCycleCount << '\n';
         CPUCycleCount = 0;
         SLINE_NUM = 0;
         ODD_FRAME = (ODD_FRAME) ? false : true;
@@ -588,7 +590,7 @@ void PPU::PRE_SLINE_TILE_FETCH() {
 
 
 //CPU will call this function
-void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
+void PPU::REG_WRITE(uint8_t DATA, uint8_t REG) {
   
     uint16_t T;
     switch (REG) {
@@ -654,7 +656,7 @@ void PPU::REG_WRITE(uint8_t DATA, uint8_t REG, long cycle) {
 }
 
 
-uint8_t PPU::REG_READ(uint8_t REG, long cycle) {
+uint8_t PPU::REG_READ(uint8_t REG) {
     static uint8_t data_buf = 0x00;
    
     switch (REG) {

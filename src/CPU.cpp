@@ -20,6 +20,11 @@ std::ofstream LOG;
 std::string LOG_LINE;
 std::stringstream LOG_STREAM;
 
+uint8_t ExtraCycles;
+uint8_t Val;
+
+bool AccmWrite;
+
 
 
 inline void CPU::STACK_PUSH(uint8_t BYTE) {
@@ -37,7 +42,7 @@ uint8_t CPU::FETCH(uint16_t ADDR, bool SAVE) {
 
     //0x2008 -- 0x3FFF mirrors 0x2000 -- 0x2007 every 8 bytes
     if (ADDR > 0x1FFF && ADDR < 0x4000)
-        return P->REG_READ((ADDR & 0x2007) % 0x2000, CPUCycleCount);
+        return P->REG_READ((ADDR & 0x2007) % 0x2000);
     
     //Every 0x0800 bytes of 0x0800 -- 0x1FFF mirrors 0x0000 -- 0x07FF
     if (ADDR < 0x2000)
@@ -71,7 +76,7 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR, uint8_t cyc) {
     //PPU registers - WRITE_BUF stores VAL in the lower 8 bits and a number representing the register to write to
     //in the 8th bit. Send cyc to allow PPU to track mid-frame state changes
     if ((ADDR >= 0x2000) && (ADDR <= 0x3FFF)) {
-        P->REG_WRITE(VAL, (ADDR & 0x2007) % 0x2000, (cyc + CPUCycleCount)*3);
+        P->REG_WRITE(VAL, (ADDR & 0x2007) % 0x2000);
         return;
     }
         
@@ -82,7 +87,7 @@ void CPU::WRITE(uint8_t VAL, uint16_t ADDR, uint8_t cyc) {
         P->OAMDMA = VAL;
         WAIT();  
         for (uint16_t i=0; i<256; i++) {
-            P->REG_WRITE(FETCH((VAL << 8) + i), 4, (cyc + CPUCycleCount)*3);
+            P->REG_WRITE(FETCH((VAL << 8) + i), 4);
         }
         WAIT(513);
         return;
@@ -161,8 +166,632 @@ void CPU::IRQ_NMI(uint16_t V) {
 }
 
 
-/* All the instructions as functions to be pointed to */
 
+void CPU::ExamineStatus(uint8_t Reg) {
+    STAT = (Reg == 0) ?  (STAT | 0x02) : (STAT & 0xFD);
+    STAT = ((Reg & 0x80) > 0) ?  (STAT | 0x80) : (STAT & 0x7F); 
+}
+
+
+/* Instruction implementations */
+
+void CPU::ADC() {
+    Val = FETCH(WBACK_ADDR);
+    TEMP = ACC + Val + (STAT & 0x01);
+    STAT = (((ACC & 0x80) == (Val & 0x80)) && ((TEMP & 0x80) != (ACC & 0x80))) ? (STAT | 0x40) : (STAT & 0xBF);
+    STAT = (ACC + Val + (STAT & 0x01) > 0xFF) ? (STAT | 0x01) : (STAT & 0xFE);
+    ACC = TEMP;           
+    ExamineStatus(ACC);
+}
+
+
+void CPU::AND() {
+    ACC &= FETCH(WBACK_ADDR);
+    ExamineStatus(ACC);
+}
+
+
+void CPU::ASL() {
+    Val = (AccmWrite) ? ACC : FETCH(WBACK_ADDR);
+    STAT &= 0xFE;
+    STAT |= (Val >> 7);
+    Val = Val << 1;
+    if (AccmWrite)
+        ACC = Val;
+    else
+        WRITE(Val, WBACK_ADDR); //W_BACK = true;
+    ExamineStatus(Val);
+}
+
+
+void CPU::BCC() {
+    int8_t offset = static_cast<int8_t>(FETCH(WBACK_ADDR));
+    if (!(STAT & 0x01)) {
+        if (((PROG_CNT + offset) & 0x0F00) != (PROG_CNT & 0x0F00))
+            ExtraCycles++; //This should be executed if branch occurs to a new page
+
+        PROG_CNT += offset;
+        ExtraCycles++;
+    }
+}
+
+
+void CPU::BCS() {
+    int8_t offset = static_cast<int8_t>(FETCH(WBACK_ADDR));
+    if (STAT & 0x01) {
+        if (((PROG_CNT + offset) & 0x0F00) != (PROG_CNT & 0x0F00))
+            ExtraCycles++; //This should be executed if branch occurs to a new page
+
+        PROG_CNT += offset;
+        ExtraCycles++;
+    }
+}
+
+
+void CPU::BEQ() {
+    int8_t offset = static_cast<int8_t>(FETCH(WBACK_ADDR));
+    if (STAT & 0x02) {
+        if (((PROG_CNT + offset) & 0x0F00) != (PROG_CNT & 0x0F00))
+            ExtraCycles++; //This should be executed if branch occurs to a new page
+
+        PROG_CNT += offset;
+        ExtraCycles++;
+    }
+}
+
+
+void CPU::BIT() {
+    Val = FETCH(WBACK_ADDR);
+    STAT &= 0x3F;
+    STAT |= (Val & 0xC0);
+    if ((ACC & Val) == 0)
+        STAT |= 0x02;
+    else
+        STAT &= 0xFD;
+}
+
+
+void CPU::BMI() {
+    int8_t offset = static_cast<int8_t>(FETCH(WBACK_ADDR));
+    if (STAT & 0x80) {
+        if (((PROG_CNT + offset) & 0x0F00) != (PROG_CNT & 0x0F00))
+            ExtraCycles++; //This should be executed if branch occurs to a new page
+
+        PROG_CNT += offset;
+        ExtraCycles++;
+    }
+}
+
+
+void CPU::BNE() {
+    int8_t offset = static_cast<int8_t>(FETCH(WBACK_ADDR));
+    if (!(STAT & 0x02)) {
+        if (((PROG_CNT + offset) & 0x0F00) != (PROG_CNT & 0x0F00))
+            ExtraCycles++; //This should be executed if branch occurs to a new page
+
+        PROG_CNT += offset;
+        ExtraCycles++;
+    }
+}
+
+
+void CPU::BPL() {
+    int8_t offset = static_cast<int8_t>(FETCH(WBACK_ADDR));
+    if (!(STAT & 0x80)) {
+        if (((PROG_CNT + offset) & 0x0F00) != (PROG_CNT & 0x0F00))
+            ExtraCycles++; //This should be executed if branch occurs to a new page
+
+        PROG_CNT += offset;
+        ExtraCycles++;
+    }
+}
+
+
+void CPU::BRK() {
+     PROG_CNT++;
+
+    STACK_PUSH(PROG_CNT >> 8);
+    STACK_PUSH(PROG_CNT & 0x00FF);
+                
+    STAT |= 0x10;
+    STACK_PUSH(STAT | 0x30);
+                
+    PROG_CNT = ((FETCH(0xFFFF) << 8) | FETCH(0xFFFE));
+    STAT |= 0x04;
+}
+
+
+void CPU::BVC() {
+    int8_t offset = static_cast<int8_t>(FETCH(WBACK_ADDR));
+    if (!(STAT & 0x40)) {
+        if (((PROG_CNT + offset) & 0x0F00) != (PROG_CNT & 0x0F00))
+            ExtraCycles++; //This should be executed if branch occurs to a new page
+
+        PROG_CNT += offset;
+        ExtraCycles++;
+    }
+}
+
+
+void CPU::BVS() {
+    int8_t offset = static_cast<int8_t>(FETCH(WBACK_ADDR));
+    if (STAT & 0x40) {
+        if (((PROG_CNT + offset) & 0x0F00) != (PROG_CNT & 0x0F00))
+            ExtraCycles++; //This should be executed if branch occurs to a new page
+
+        PROG_CNT += offset;
+        ExtraCycles++;
+    }
+}
+
+
+void CPU::CLC() {
+    STAT &= 0xFE;
+}
+
+
+void CPU::CLD() {
+    STAT &= 0xF7;
+}
+
+
+void CPU::CLI() {
+    STAT &= 0xFB;
+    IRQDelay = true;
+}
+
+
+void CPU::CLV() {
+    STAT &= 0xBF;
+}
+
+
+void CPU::CMP() {
+    Val = FETCH(WBACK_ADDR);
+    STAT = (ACC >= Val) ? (STAT | 0x01) : (STAT & 0xFE);
+    STAT = (ACC == Val) ? (STAT | 0x02) : (STAT & 0xFD);
+    STAT = ((ACC - Val) & 0x80) ? (STAT | 0x80) : (STAT & 0x7F);
+}
+
+
+void CPU::CPX() {
+    Val = FETCH(WBACK_ADDR);
+    STAT = (IND_X >= Val) ? (STAT | 0x01) : (STAT & 0xFE);
+    STAT = (IND_X == Val) ? (STAT | 0x02) : (STAT & 0xFD);
+    STAT = ((IND_X - Val) & 0x80) ? (STAT | 0x80) : (STAT & 0x7F);           
+}
+
+
+void CPU::CPY() {
+    Val = FETCH(WBACK_ADDR);
+    STAT = (IND_Y >= Val) ? (STAT | 0x01) : (STAT & 0xFE);
+    STAT = (IND_Y == Val) ? (STAT | 0x02) : (STAT & 0xFD);
+    STAT = ((IND_Y - Val) & 0x80) ? (STAT | 0x80) : (STAT & 0x7F);
+}
+
+
+void CPU::DEC() {
+    if (AccmWrite)
+        ExamineStatus(--ACC);
+    else {
+        Val = FETCH(WBACK_ADDR) - 1;
+        WRITE(Val, WBACK_ADDR);
+        ExamineStatus(Val);
+    }
+}
+
+
+void CPU::DEX() {
+    ExamineStatus(--IND_X);
+}
+
+
+void CPU::DEY() {
+    ExamineStatus(--IND_Y);
+}
+
+
+void CPU::EOR() {
+    ACC ^= FETCH(WBACK_ADDR);
+    ExamineStatus(ACC);
+}
+
+
+void CPU::INC() {
+    if (AccmWrite)
+        ExamineStatus(++ACC);
+    else {
+        Val = FETCH(WBACK_ADDR) + 1;
+        WRITE(Val, WBACK_ADDR);
+        ExamineStatus(Val);
+    }
+}
+
+
+void CPU::INX() {
+    ExamineStatus(++IND_X);
+}
+
+
+void CPU::INY() {
+    ExamineStatus(++IND_Y);
+}
+
+
+void CPU::JMP_Abs() {
+    PROG_CNT = WBACK_ADDR;
+}
+
+
+void CPU::JMP_IndAbs() {
+    PROG_CNT &= 0;
+    PROG_CNT |= FETCH(((HIGH << 8) | LOW), true);
+    if ((LOW & 0xFF) == 0xFF)
+        PROG_CNT |= (FETCH(HIGH << 8, true) << 8);
+    else
+        PROG_CNT |= (FETCH(((HIGH << 8) | LOW) + 1) << 8);
+ 
+}
+
+
+void CPU::JSR() {
+    STACK_PUSH((PROG_CNT - 1) >> 8);
+    STACK_PUSH((PROG_CNT - 1) & 0x00FF);
+    //std::cout << "WBack: " << std::hex << WBACK_ADDR << '\n';
+    PROG_CNT = ((HIGH << 8) | LOW);
+}
+
+
+void CPU::LDA() {
+    ACC = FETCH(WBACK_ADDR);
+    ExamineStatus(ACC);
+}
+
+
+void CPU::LDX() {
+    IND_X = FETCH(WBACK_ADDR);
+    ExamineStatus(IND_X);
+}
+
+
+void CPU::LDY() {
+    IND_Y = FETCH(WBACK_ADDR);
+    ExamineStatus(IND_Y);
+}
+
+
+void CPU::LSR() {
+    Val = (AccmWrite) ? ACC : FETCH(WBACK_ADDR);
+    STAT &= 0xFE;
+    STAT |= (0x01 & Val);
+    Val = Val >> 1;
+    if (AccmWrite)
+        ACC = Val;
+    else
+        WRITE(Val, WBACK_ADDR);
+    ExamineStatus(Val);
+}
+
+
+void CPU::NOP() {}
+
+
+void CPU::ORA() {
+    ACC |= FETCH(WBACK_ADDR);
+    ExamineStatus(ACC);
+}
+
+
+void CPU::PHA() {
+    STACK_PUSH(ACC);
+}
+
+
+void CPU::PHP() {
+    STACK_PUSH(STAT | 0x30);
+}
+
+
+void CPU::PLA() {
+    ACC = STACK_POP();
+    STAT = (ACC == 0) ? (STAT | 0x02) : (STAT & 0xFD);
+    STAT = ((ACC & 0x80) > 0) ? (STAT | 0x80) : (STAT & 0x7F); 
+ 
+}
+
+
+void CPU::PLP() {
+    IRQPend = (A->FireIRQ && !(STAT & 0x04));
+    STAT = STACK_POP();
+    IRQDelay = true;
+}
+
+
+void CPU::ROL() {
+    Val = (AccmWrite) ? ACC : FETCH(WBACK_ADDR);
+    TEMP = Val << 1;
+    TEMP |= (0x01 & STAT);
+    STAT &= 0xFE;
+    STAT |= ((0x80 & Val) >> 7);
+    if (AccmWrite)
+        ACC = TEMP;
+    else
+        WRITE(TEMP, WBACK_ADDR);
+    ExamineStatus(TEMP);
+}
+
+
+void CPU::ROR() {
+    Val = (AccmWrite) ? ACC : FETCH(WBACK_ADDR);
+    TEMP = STAT;
+    STAT &= 0xFE;
+    STAT |= (0x01 & Val);
+    Val = Val >> 1;
+    Val |= ((TEMP & 0x01) << 7);
+    if (AccmWrite)
+        ACC = Val;
+    else
+        WRITE(Val, WBACK_ADDR);
+    ExamineStatus(Val);
+}
+
+
+void CPU::RTI() {
+    STAT = STACK_POP();
+                
+    PROG_CNT = (0 | STACK_POP());
+    PROG_CNT |= (STACK_POP() << 8);
+    IRQPend = (A->FireIRQ && !(STAT & 0x04));
+}
+
+
+void CPU::RTS() {
+    PROG_CNT = (0 | STACK_POP());
+    PROG_CNT |= (STACK_POP() << 8);
+    //std::cout << "PC " << std::hex << PROG_CNT << '\n';          
+    PROG_CNT++;
+}
+
+
+void CPU::SBC() {
+    uint16_t S_VAL = uint16_t(FETCH(WBACK_ADDR)) ^ 0xFF;
+    uint16_t S_TEMP = uint16_t(ACC) + S_VAL + (STAT & 0x01);
+    STAT &= 0xBE; //Clear V and C flags
+    STAT |= (S_TEMP & 0xFF00) ? 1 : 0;
+    STAT |= ((S_TEMP ^ uint16_t(ACC)) & (S_TEMP ^ S_VAL) & 0x0080) ? 0x40 : 0;
+
+    ACC = S_TEMP & 0xFF;
+    ExamineStatus(ACC);
+}
+
+
+void CPU::SEC() {
+    STAT |= 1;
+}
+
+
+void CPU::SED() {
+    STAT |= 0x08;
+}
+
+
+void CPU::SEI() {
+    IRQPend = (A->FireIRQ && !(STAT & 0x04));
+    STAT |= 0x04;
+    IRQDelay = true;
+}
+
+
+void CPU::STA() {
+    WRITE(ACC, WBACK_ADDR);
+}
+
+
+void CPU::STX() {
+    WRITE(IND_X, WBACK_ADDR);
+}
+
+
+void CPU::STY() {
+    WRITE(IND_Y, WBACK_ADDR);
+}
+
+
+void CPU::TAX() {
+    IND_X = ACC;
+    ExamineStatus(IND_X);
+}
+
+
+void CPU::TAY() {
+    IND_Y = ACC;
+    ExamineStatus(IND_Y);
+}
+
+
+void CPU::TSX() {
+    IND_X = STCK_PNT;
+    ExamineStatus(IND_X);
+}
+
+
+void CPU::TXA() {
+    ACC = IND_X;
+    ExamineStatus(ACC);
+}
+
+
+void CPU::TXS() {
+    STCK_PNT = IND_X;
+}
+
+
+void CPU::TYA() {
+    ACC = IND_Y;
+    ExamineStatus(ACC);
+}
+
+
+
+void CPU::Start() {
+    //calculate oops cycles, low, high, writeback address, and fetched val
+    bool unofficial = false;
+    const uint8_t *keyboard = SDL_GetKeyboardState(NULL);
+    
+    //Enable logging
+    LOG.open("CPU_LOG.txt", std::ios::trunc | std::ios::out);
+
+    //Reset bool
+    bool R = true;
+
+    //First cycle has started
+    uint8_t CODE;
+    
+    //Main loop
+    while (true) {
+        if (R || keyboard[SDL_SCANCODE_R]) { //Currently, pressing "r" key triggers a reset
+            LOG << "Reset\n";
+            P->Reset = true;
+            RESET();
+            R = false;
+        } else if (P->GEN_NMI && !P->NmiDelay) {
+            LOG << "P NMI\n";
+            P->GEN_NMI = 0;
+            IRQ_NMI(0xFFFA);
+        } else if (A->FireIRQ && !(STAT & 0x04) && !IRQDelay) {
+            LOG << "A IRQ\n";
+            IRQ_NMI(0xFFFE);
+            A->FireIRQ--;
+        } else if (IRQPend) {
+            LOG << "IRQPend\n";
+            IRQ_NMI(0xFFFE);
+            IRQPend = false;
+        } else if (*(ROM->FireIrq) && !(STAT & 0x04)) {
+            LOG << "Rom\n";
+            *(ROM->FireIrq) = false;
+            IRQ_NMI(0xFFFE);
+        }
+        
+        IRQDelay = (IRQDelay) ? false : IRQDelay;
+        P->NmiDelay = (P->NmiDelay) ? false : P->NmiDelay;
+
+        if (Gamelog)
+            LOG << std::hex << PROG_CNT << ": ";
+        CODE = FETCH(PROG_CNT++);
+        
+        //Compose a string and append after EXEC
+        if (Gamelog) {
+            LOG_STREAM.str(std::string());
+            LOG << std::hex << int(CODE) << " ";
+            LOG_STREAM << "ACC:" << std::hex << int(ACC) << " ";
+            LOG_STREAM << "X:" << std::hex << int(IND_X) << " ";
+            LOG_STREAM << "Y:" << std::hex << int(IND_Y) << " ";
+            LOG_STREAM << "STAT:" << std::hex << int(STAT) << " ";
+            LOG_STREAM << "SP:" << std::hex << int(STCK_PNT);
+        }
+
+        AccmWrite = false;
+        ExtraCycles = 0;
+
+        switch (ModeLookup[CODE]) {
+            case IMP:
+                (this->*InstructionLookup[CODE])();           
+                break;
+            case ABS:
+                LOW = FETCH(PROG_CNT++, true);
+                HIGH = FETCH(PROG_CNT++, true);
+                WBACK_ADDR = (LOW | (HIGH << 8));
+                (this->*InstructionLookup[CODE])();
+                break;
+            case ZERO_PG:
+                WBACK_ADDR = FETCH(PROG_CNT++, true);
+                (this->*InstructionLookup[CODE])();
+                break;
+            case ZERO_PG_X:
+                WBACK_ADDR = (FETCH(PROG_CNT++, true) + IND_X) % 256;
+                (this->*InstructionLookup[CODE])();
+                break;
+            case ABS_X:
+                WBACK_ADDR = FETCH(PROG_CNT++, true);
+                WBACK_ADDR |= (FETCH(PROG_CNT++, true) << 8);
+                WBACK_ADDR += IND_X;
+                (this->*InstructionLookup[CODE])();
+                break;
+            case IMMED:
+                WBACK_ADDR = PROG_CNT++;
+                (this->*InstructionLookup[CODE])();
+                break;
+            case ABS_Y:
+                WBACK_ADDR = FETCH(PROG_CNT++, true);
+                WBACK_ADDR |= (FETCH(PROG_CNT++, true) << 8);
+                WBACK_ADDR += IND_Y;
+                (this->*InstructionLookup[CODE])();
+                break;
+            case INDR_X:
+                POINT = FETCH(PROG_CNT++, true);
+                WBACK_ADDR = (0 | FETCH((POINT + IND_X) % 256, true));
+                WBACK_ADDR |= (FETCH((POINT + IND_X + 1) % 256, true) << 8);
+                (this->*InstructionLookup[CODE])();
+                break;
+            case INDR_Y:
+                POINT = FETCH(PROG_CNT++, true);
+                //LOW = FETCH(POINT);
+                //HIGH = FETCH((POINT + 1) % 256);
+                WBACK_ADDR = ((FETCH(POINT) | (FETCH((POINT + 1) % 256) << 8)) + IND_Y);
+                (this->*InstructionLookup[CODE])();
+                break;
+            case REL:
+                WBACK_ADDR = PROG_CNT++;
+                (this->*InstructionLookup[CODE])();
+                break;
+            case ACCM:
+                AccmWrite = true;
+                (this->*InstructionLookup[CODE])();
+                break;
+            case ZERO_PG_Y:
+                WBACK_ADDR = (FETCH(PROG_CNT++, true) + IND_Y) % 256;
+                (this->*InstructionLookup[CODE])();
+                break;
+            case INDR:
+                LOW = FETCH(PROG_CNT++, true);
+                HIGH = FETCH(PROG_CNT++, true);
+                (this->*InstructionLookup[CODE])();
+                break;
+            default:
+                break;
+        }
+
+        if (unofficial) {
+            std::cout << "Unofficial opcode : " << std::hex << int(CODE) << " at: " << PROG_CNT << "\n";
+            break;
+        }
+        //At this point, all cycles of the instruction have been executed
+
+        //Controller polling if probe is on
+        //Mapping of keys to buttons is arbitrary at this point just to get things working
+        if (probe) {
+            CONTROLLER1 = 0x00;
+            CONTROLLER1 = (keyboard[SDL_SCANCODE_A] << 7) | 
+            (keyboard[SDL_SCANCODE_S] << 6) | 
+            (keyboard[SDL_SCANCODE_RSHIFT] << 5) | 
+            (keyboard[SDL_SCANCODE_RETURN] << 4) |
+            (keyboard[SDL_SCANCODE_UP] << 3) |
+            (keyboard[SDL_SCANCODE_DOWN] << 2) | 
+            (keyboard[SDL_SCANCODE_LEFT] << 1) |
+            keyboard[SDL_SCANCODE_RIGHT]; 
+        }
+
+        ExtraCycles += (((LOW + IND_Y) > 255) | ((LOW + IND_X) > 255)) * PageCrossCycles[CODE];
+
+        WAIT(Cycles[CODE] + ExtraCycles);
+        if (Gamelog) {
+            LOG << OPCODES[CODE] << "\t\t" << LOG_STREAM.str() << '\n';
+        }
+
+        if (quit)
+            break;
+    }
+}
 
 
 

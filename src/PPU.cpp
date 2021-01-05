@@ -88,7 +88,6 @@ void PPU::RESET() {
 
 
 
-
 void PPU::CYCLE(uint16_t N) {
     if (quit)
         return;
@@ -126,7 +125,7 @@ void PPU::GENERATE_SIGNAL() {
             std::cout << "Unlock failed\n";
 
         PRE_RENDER();
-        P_LOG << CPUCycleCount << '\n';
+        //P_LOG << CPUCycleCount << '\n';
         while (SLINE_NUM < 240) {
             SCANLINE(SLINE_NUM++);
         }
@@ -164,7 +163,7 @@ void PPU::GENERATE_SIGNAL() {
             std::this_thread::yield();
         
         //std::cout << CPUCycleCount << '\n';
-        CPUCycleCount = 0;
+        //CPUCycleCount = 0;
         SLINE_NUM = 0;
         ODD_FRAME = (ODD_FRAME) ? false : true;
     }

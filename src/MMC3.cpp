@@ -2,7 +2,7 @@
 
 
 
-inline uint32_t MMC3::CPU_READ(uint16_t ADDR) {
+uint32_t MMC3::CPU_READ(uint16_t ADDR) {
     if ((ADDR >= 0x6000) && (ADDR <= 0x7FFF))
         return PRG_RAM[ADDR % 0x6000];
    
@@ -13,7 +13,7 @@ inline uint32_t MMC3::CPU_READ(uint16_t ADDR) {
 
 //For nametable fetches, need to consider what happens when 4-screen VRAM is dictated by the iNES header thus ignoring
 //the mirroring register. Only one game for MMC3 does this however - Rad Racer 2
-inline uint32_t MMC3::PPU_READ(uint16_t ADDR) {
+uint32_t MMC3::PPU_READ(uint16_t ADDR) {
     return (ChrBanks[ADDR / 0x0400] * 1024 + (ADDR % 0x0400));
 }
 

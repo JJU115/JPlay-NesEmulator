@@ -11,6 +11,7 @@
 #include <chrono>
 #include <thread>
 #include <cstdint>
+#include <array>
 #include <vector>
 #include "Cartridge.hpp"
 #include <mutex>

@@ -11,7 +11,6 @@ bool quit;
 long CPUCycleCount;
 SDL_cond* mainPPUCond;
 SDL_mutex* mainThreadMutex;
-
 SDL_mutex* CpuPpuMutex;
 
 int CPU_Run(void* data);
@@ -111,7 +110,7 @@ int main(int argc, char *argv[]) {
 
 int CPU_Run(void* data) {
     
-    ((CPU* )data)->Start();
+    ((CPU* )data)->RUN();
     
     return 0;
 }

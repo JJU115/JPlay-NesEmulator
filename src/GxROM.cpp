@@ -1,19 +1,19 @@
 #include "GxROM.hpp"
 
 
-inline uint32_t GxROM::CPU_READ(uint16_t ADDR) {
+uint32_t GxROM::CPU_READ(uint16_t ADDR) {
 
     return (PrgBank * PRG_BANK_SIZE * 2) + (ADDR % 0x8000);
 }
 
 
-inline uint32_t GxROM::PPU_READ(uint16_t ADDR) {
+uint32_t GxROM::PPU_READ(uint16_t ADDR) {
     return (ChrBank * CHR_BANK_SIZE * 2) + ADDR;
 }
 
 
 
-inline void GxROM::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
+void GxROM::CPU_WRITE(uint16_t ADDR, uint8_t VAL) {
 
     PrgBank = ((VAL & 0x30) >> 4);
     ChrBank = (VAL & 0x03);

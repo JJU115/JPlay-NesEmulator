@@ -300,7 +300,7 @@ struct DMC {
                 output += (output < 126) ? 2 : 0;
             else
                 output -= (output > 1) ? 2 : 0;
-        }    
+        }
 
         shiftReg = shiftReg >> 1;
         bitsRemain -= (bitsRemain == 0) ? 0 : 1;
@@ -342,7 +342,7 @@ struct DMC {
         else {
             uint8_t front = sampleBuffer.front();
             sampleBuffer.pop();
-            return front;
+            return (front > 127) ? output : front;
         }
 
     }
@@ -363,8 +363,13 @@ struct Mixer {
     std::array<double, 31> pulseMixTable;
     std::array<double, 203> tndTable;
     double mixAudio(long sampleNum) {
+        double d = dmc->getSample();
+        if (d > 127)
+            std::cout << "invalid1\n";
+        double n = noise->getSample();
+        double t = tri->getSample();
         return pulseMixTable[pulseOne->getSample(sampleNum) + pulseTwo->getSample(sampleNum)] + 
-            tndTable[dmc->getSample() + 2 * noise->getSample() + 3 * tri->getSample()];      
+            tndTable[d + 2 * n + 3 * t];      
     }
 };
 
@@ -433,7 +438,6 @@ class APU {
         uint16_t ApuCycles;
         uint8_t FireIRQ;
         void Reg_Write(uint16_t reg, uint8_t data);
-        void Channels_Out();
         bool Pulse_Out();
         void Open_Audio();        
         uint8_t Reg_Read();

@@ -13,6 +13,7 @@ extern bool Gamelog;
 extern bool quit;
 extern long CPUCycleCount;
 extern SDL_mutex* CpuPpuMutex;
+extern SDL_mutex* mainThreadMutex;
 
 uint8_t VAL, TEMP, LOW, HIGH, POINT;
 uint16_t WBACK_ADDR;
@@ -167,7 +168,7 @@ void CPU::IRQ_NMI(uint16_t V) {
 
 
 
-void CPU::ExamineStatus(uint8_t Reg) {
+inline void CPU::ExamineStatus(uint8_t Reg) {
     STAT = (Reg == 0) ?  (STAT | 0x02) : (STAT & 0xFD);
     STAT = ((Reg & 0x80) > 0) ?  (STAT | 0x80) : (STAT & 0x7F); 
 }

@@ -145,8 +145,8 @@ bool APU::Pulse_Out() {
         CyclesPerSample += CycleReload;
         if (NoiseChannel.noiseQueue.size() < 4096)
             NoiseChannel.sample();
-        if (DMCChannel.sampleBuffer.size() < 4096)
-            DMCChannel.sampleBuffer.push(DMCChannel.output);       
+        if (DMCChannel.sampleBuffer.size() < 4096) {
+            DMCChannel.sampleBuffer.push(DMCChannel.output);
     }
 
     if (DMCChannel.rate-- == 0) {

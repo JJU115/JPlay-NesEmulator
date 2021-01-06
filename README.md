@@ -30,7 +30,7 @@ Of the first 16 bytes only the first 6 are used, GxROM mapped games will use the
 unused bytes should be 0.
 
 ## Dependencies
-JPlay requires SDL2.0 to run 
+JPlay uses SDL2.0 but if you just want the release then no extra files other than the provided .dlls are required to run.
 
 
 ## Usage
@@ -40,7 +40,7 @@ If you only want to run the program then all you need is the NES.exe file and yo
 $ NES <.nes file>
 ```
 
-You can compile it yourself with the makefile and mingw32-make on Windows. Change the SDL_LIB and SDL_INCLUDE variables to match your SDL2 installation. You'll need the SDL2 development libraries --> https://www.libsdl.org/download-2.0.php
+You can compile it yourself with the provided makefile and mingw32-make on Windows. Change the SDL_LIB and SDL_INCLUDE variables to match your SDL2 installation. You'll need the SDL2 development libraries --> https://www.libsdl.org/download-2.0.php
 
 
 ## Controller Mapping

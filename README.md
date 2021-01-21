@@ -25,7 +25,7 @@ JPlay implements and can play games using the following iNES mappers:
   * (9) MMC2
   * (66) GxROM
 
-This amounts to ~1412 different games. Note that ROM dumps with bad iNES headers will likely crash the program.
+This amounts to ~1412 different games. Be wary of ROM dumps with bad iNES headers.
 Of the first 16 bytes only the first 6 are used, GxROM mapped games will use the top 4 bits of byte 7, the remaining
 unused bytes should be 0.
 
